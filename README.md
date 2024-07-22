@@ -20,6 +20,7 @@ Create a screencasting application using Rust that continuously captures screen 
 ## Useful Resources
 
 * [WebRTC crate](https://github.com/webrtc-rs/webrtc)
+* [Ngrok crate](https://ngrok.com/docs/using-ngrok-with/rust/)
 * [Druid crate documentation](https://docs.rs/druid/latest/druid/)
 * [Tiny Intro to Async/Await Tokio crate for server](https://www.youtube.com/watch?v=T2mWg91sx-o&ab_channel=ManningPublications)
 * [Cargo Workspaces](https://doc.rust-lang.org/book/ch14-03-cargo-workspaces.html)

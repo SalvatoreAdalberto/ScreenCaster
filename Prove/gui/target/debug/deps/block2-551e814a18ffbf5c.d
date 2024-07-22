@@ -1,0 +1,10 @@
+/Users/salvatore/Desktop/MAGISTRALE/Programmazione di Sistema/Rust/ScreenCaster/Prove/gui/target/debug/deps/libblock2-551e814a18ffbf5c.rmeta: /Users/salvatore/.cargo/registry/src/index.crates.io-6f17d22bba15001f/block2-0.3.0/src/lib.rs /Users/salvatore/.cargo/registry/src/index.crates.io-6f17d22bba15001f/block2-0.3.0/src/block.rs /Users/salvatore/.cargo/registry/src/index.crates.io-6f17d22bba15001f/block2-0.3.0/src/concrete_block.rs /Users/salvatore/.cargo/registry/src/index.crates.io-6f17d22bba15001f/block2-0.3.0/src/debug.rs /Users/salvatore/.cargo/registry/src/index.crates.io-6f17d22bba15001f/block2-0.3.0/src/global.rs /Users/salvatore/.cargo/registry/src/index.crates.io-6f17d22bba15001f/block2-0.3.0/src/rc_block.rs
+
+/Users/salvatore/Desktop/MAGISTRALE/Programmazione di Sistema/Rust/ScreenCaster/Prove/gui/target/debug/deps/block2-551e814a18ffbf5c.d: /Users/salvatore/.cargo/registry/src/index.crates.io-6f17d22bba15001f/block2-0.3.0/src/lib.rs /Users/salvatore/.cargo/registry/src/index.crates.io-6f17d22bba15001f/block2-0.3.0/src/block.rs /Users/salvatore/.cargo/registry/src/index.crates.io-6f17d22bba15001f/block2-0.3.0/src/concrete_block.rs /Users/salvatore/.cargo/registry/src/index.crates.io-6f17d22bba15001f/block2-0.3.0/src/debug.rs /Users/salvatore/.cargo/registry/src/index.crates.io-6f17d22bba15001f/block2-0.3.0/src/global.rs /Users/salvatore/.cargo/registry/src/index.crates.io-6f17d22bba15001f/block2-0.3.0/src/rc_block.rs
+
+/Users/salvatore/.cargo/registry/src/index.crates.io-6f17d22bba15001f/block2-0.3.0/src/lib.rs:
+/Users/salvatore/.cargo/registry/src/index.crates.io-6f17d22bba15001f/block2-0.3.0/src/block.rs:
+/Users/salvatore/.cargo/registry/src/index.crates.io-6f17d22bba15001f/block2-0.3.0/src/concrete_block.rs:
+/Users/salvatore/.cargo/registry/src/index.crates.io-6f17d22bba15001f/block2-0.3.0/src/debug.rs:
+/Users/salvatore/.cargo/registry/src/index.crates.io-6f17d22bba15001f/block2-0.3.0/src/global.rs:
+/Users/salvatore/.cargo/registry/src/index.crates.io-6f17d22bba15001f/block2-0.3.0/src/rc_block.rs:
