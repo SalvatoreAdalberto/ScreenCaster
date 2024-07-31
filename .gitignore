@@ -1,1 +1,4 @@
 .DS_Store
+./Prove/capture/target/*
+./Prove/gui/target/*
+./Prove/network/target/*
