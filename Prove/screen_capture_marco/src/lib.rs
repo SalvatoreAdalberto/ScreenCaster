@@ -70,9 +70,6 @@ pub mod mp4 {
 
         /// Creates a current MP4 encoder.
         pub fn close(&mut self) -> Result<(), Error> {
-            // ここで明示的にstdinをdropする
-            drop(&self.ffmpeg.stdin);
-            // ffmpeg側の終了を待つ
             self.ffmpeg.wait()?;
             Ok(())
         }
