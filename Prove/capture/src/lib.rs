@@ -1,155 +1,77 @@
-#[cfg(target_os = "macos")]
-mod mac;
+pub mod mp4 {
+    use std::io::Error;
+    use image::{DynamicImage, GenericImageView};
+    use std::io::Write;
+    use std::path::Path;
+    use std::process::{Command, Stdio};
 
-#[cfg(target_os = "macos")]
-use mac::{encoder_finish, encoder_ingest_bgra_frame, encoder_ingest_yuv_frame, encoder_init, Int};
-
-#[cfg(target_os = "windows")]
-use windows_capture::encoder::{
-    VideoEncoder as WVideoEncoder, VideoEncoderQuality, VideoEncoderType,
-};
-
-use anyhow::Error;
-use scap::frame::Frame;
-
-mod utils;
-
-pub struct VideoEncoder {
-    first_timestamp: u64,
-
-    #[cfg(target_os = "macos")]
-    encoder: *mut std::ffi::c_void,
-
-    #[cfg(target_os = "windows")]
-    encoder: Option<WVideoEncoder>,
-}
-
-#[derive(Debug)]
-pub struct VideoEncoderOptions {
-    pub width: usize,
-    pub height: usize,
-    pub path: String,
-}
-
-impl VideoEncoder {
-    pub fn new(options: VideoEncoderOptions) -> Self {
-        #[cfg(target_os = "windows")]
-        let encoder = Some(
-            WVideoEncoder::new(
-                VideoEncoderType::Mp4,
-                VideoEncoderQuality::Uhd2160p,
-                options.width as u32,
-                options.height as u32,
-                options.path,
-            )
-            .expect("Failed to create video encoder"),
-        );
-
-        #[cfg(target_os = "macos")]
-        let encoder = unsafe {
-            encoder_init(
-                options.width as Int,
-                options.height as Int,
-                options.path.as_str().into(),
-            )
-        };
-
-        Self {
-            encoder,
-            first_timestamp: 0,
-        }
+    /// MP4 encoder.
+    pub struct Encoder<P: AsRef<Path>> {
+        p: P,
+        ffmpeg: std::process::Child,
+        width: u32,
+        height: u32,
+        framerate: u32,
     }
 
-    pub fn ingest_next_frame(&mut self, frame: &Frame) -> Result<(), Error> {
-        match frame {
-            Frame::BGRA(frame) => {
-                if self.first_timestamp == 0 {
-                    self.first_timestamp = frame.display_time;
-                }
+    impl<P: AsRef<Path>> Encoder<P> {
+        /// Creates a new MP4 encoder.
+        pub fn new(path: P, width: u32, height: u32, framerate: u32) -> Result<Encoder<P>, Error> {
+            let name = path.as_ref();
 
-                let timestamp = frame.display_time - self.first_timestamp;
+            // ffmpegを実行するためにコマンドを組み立てる
+            let command = |width, height, framerate, output| {
+                format!(
+                    "ffmpeg -framerate {framerate} -f rawvideo -pix_fmt rgba -s {width}x{height} -i - -pix_fmt yuv420p -vcodec libx264 -crf 18 -preset slow -profile:v high -movflags faststart {output:?}",
+                    width = width, height = height, framerate = framerate, output = output
+                )
+            };
 
-                #[cfg(target_os = "windows")]
-                {
-                    let timestamp_nanos = std::time::Duration::from_nanos(timestamp);
+            // ffmpegを実行
+            let ffmpeg = Command::new("/bin/sh")
+                .args(&["-c", &command(width, height, framerate, name)])
+                .stdin(Stdio::piped())
+                .spawn()?;
 
-                    // TODO: why does the magic number 10 work here?
-                    let timestamp_micros = timestamp_nanos.as_micros() as i64;
-                    let timestamp_micros_10 = timestamp_micros * 10;
+            // 返り値のEncoder構造体は、実行中のffmpegプロセスのハンドラなどを含む
+            Ok(Encoder {
+                p: path,
+                ffmpeg: ffmpeg,
+                width: width,
+                height: height,
+                framerate: framerate,
+            })
+        }
 
-                    let buffer = utils::flip_image_vertical_bgra(
-                        &frame.data,
-                        frame.width as usize,
-                        frame.height as usize,
-                    );
+        /// Encodes a frame.
+        pub fn encode(&mut self, frame: &DynamicImage) -> Result<(), Error> {
+            let (width, height) = frame.dimensions();
 
-                    if self.encoder.is_some() {
-                        self.encoder
-                            .as_mut()
-                            .unwrap()
-                            .send_frame_buffer(&buffer, timestamp_micros_10)
-                            .expect("failed to send frame");
-                    }
-                }
+            // 入力画像のサイズがEncoderに登録されたサイズと異なる場合はエラーを返す
+            if (width, height) != (self.width, self.height) {
+                Err(Error::from(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "Invalid image size",
+                )))
+            } else {
+                let stdin = match self.ffmpeg.stdin.as_mut() {
+                    Some(stdin) => Ok(stdin),
+                    None => Err(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        "cannot start ffmpeg",
+                    )),
+                }?;
 
-                #[cfg(target_os = "macos")]
-                unsafe {
-                    encoder_ingest_bgra_frame(
-                        self.encoder,
-                        frame.width as Int,
-                        frame.height as Int,
-                        timestamp as Int,
-                        frame.width as Int,
-                        frame.data.as_slice().into(),
-                    );
-                }
-            }
-            Frame::YUVFrame(frame) => {
-                #[cfg(target_os = "macos")]
-                {
-                    if self.first_timestamp == 0 {
-                        self.first_timestamp = frame.display_time;
-                    }
-
-                    let timestamp = frame.display_time - self.first_timestamp;
-
-                    #[cfg(target_os = "macos")]
-                    unsafe {
-                        encoder_ingest_yuv_frame(
-                            self.encoder,
-                            frame.width as Int,
-                            frame.height as Int,
-                            timestamp as Int,
-                            frame.luminance_stride as Int,
-                            frame.luminance_bytes.as_slice().into(),
-                            frame.chrominance_stride as Int,
-                            frame.chrominance_bytes.as_slice().into(),
-                        );
-                    }
-                }
-            }
-            _ => {
-                println!("henx doesn't support this pixel format yet")
+                // 標準入力にフレームのピクセルを流し込む
+                stdin.write_all(&frame.to_bytes())?;
+                Ok(())
             }
         }
 
-        Ok(())
-    }
-
-    pub fn finish(&mut self) -> Result<(), Error> {
-        #[cfg(target_os = "windows")]
-        {
-            self.encoder
-                .take()
-                .unwrap()
-                .finish()
-                .expect("Failed to finish encoding");
+        /// Creates a current MP4 encoder.
+        pub fn close(&mut self) -> Result<(), Error> {
+            self.ffmpeg.wait()?;
+            Ok(())
         }
-
-        #[cfg(target_os = "macos")]
-        unsafe {
-            encoder_finish(self.encoder);
-        }
-        Ok(())
     }
 }

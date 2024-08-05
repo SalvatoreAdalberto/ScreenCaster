@@ -1,61 +1,81 @@
-// This program is just a testbed for the library itself
-// Refer to the lib.rs file for the actual implementation
-
-use henx::{VideoEncoder, VideoEncoderOptions};
+use screen_capure_marco::mp4::Encoder;
 use scap::{
-    capturer::{Capturer, Options, Area, Point, Size},
-    frame::FrameType,
+    capturer::{Area, Capturer, Options, Point, Size},
+    frame::Frame,
 };
+use image::DynamicImage;
+use image::ImageBuffer;
+use ffmpeg_sidecar::{
+    command::ffmpeg_is_installed,
+    download::{check_latest_version, download_ffmpeg_package, ffmpeg_download_url, unpack_ffmpeg},
+    paths::sidecar_dir,
+    version::ffmpeg_version,
+  };
+fn ffmpeg_download_url_custom() -> Result<&'static str, &'static str> {
+    if cfg!(all(target_os = "windows", target_arch = "x86_64")) {
+      Ok("https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip") // working
+    } else if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+      Ok("https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz") // not working
+    } else if cfg!(all(target_os = "macos", target_arch = "x86_64")) {
+      Ok("https://evermeet.cx/ffmpeg/getrelease") // not working
+    } else if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+      Ok("https://www.osxexperts.net/ffmpeg7arm.zip") // not working
+    } else {
+      Err("Unsupported platform")}
+  }
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let download_url = ffmpeg_download_url_custom()?;
+  let destination = sidecar_dir()?;
 
-fn main() {
-    if !scap::is_supported() {
-        println!("❌ Platform not supported");
-        return;
-    }
+  // By default the download will use a `curl` command. You could also write
+  // your own download function and use another package like `reqwest` instead.
+  println!("Downloading from: {:?}", download_url);
+  let archive_path = download_ffmpeg_package(download_url, &destination)?;
+  println!("Downloaded package: {:?}", archive_path);
 
-    if !scap::has_permission() {
-        println!("❌ Permission not granted");
-        return;
-    }
+  // Extraction uses `tar` on all platforms (available in Windows since version 1803)
+  println!("Extracting...");
+  unpack_ffmpeg(&archive_path, &destination)?;
+    let framerate = 30;
+    let output_file = "output.mp4";
 
     let options = Options {
-        fps: 60,
-        target: None,
+        fps: framerate,
         show_cursor: true,
         show_highlight: true,
         excluded_targets: None,
-        output_type: FrameType::BGRAFrame,
-        output_resolution: scap::capturer::Resolution::Captured,
-        crop_area: Some(Area {
-            origin: Point { x: 300.0, y: 200.0 },
-            size: Size {
-                width: 900.0,
-                height: 400.0,
-            },
+        excluded_windows: None,
+        output_type: scap::frame::FrameType::BGRAFrame,
+        output_resolution: scap::capturer::Resolution::_1080p,
+        source_rect: Some(Area {
+            origin: Point { x: 0.0, y: 0.0 },
+            size: Size { width: 1000.0, height: 1000.0 },
         }),
         ..Default::default()
     };
 
-    let mut capturer = Capturer::new(options);
-    let [output_width, output_height] = capturer.get_output_frame_size();
+    let mut recorder = Capturer::new(options);
+    recorder.start_capture();
 
-    let mut encoder = VideoEncoder::new(VideoEncoderOptions {
-        width: output_width as usize,
-        height: output_height as usize,
-        path: "output.mp4".to_string(),
-    });
+    let [width,height] = recorder.get_output_frame_size();
 
-    capturer.start_capture();
+    let mut encoder = Encoder::new(output_file, width, height, framerate)?;
 
-    // #7 Capture 100 frames
-    for _ in 0..300 {
-        let frame = capturer.get_next_frame().expect("couldn't get next frame");
-        encoder
-            .ingest_next_frame(&frame)
-            .expect("frame couldn't be encoded");
+    for _ in 0..100 {
+        let frame = recorder.get_next_frame()?;
+
+        match frame {
+            Frame::BGRA(frame) => {
+                let img = DynamicImage::ImageBgra8(ImageBuffer::from_raw(width, height, frame.data).unwrap());
+                encoder.encode(&img)?;
+            }
+            _ => continue,
+        };
     }
 
-    capturer.stop_capture();
+    encoder.close()?;
 
-    encoder.finish().expect("failed to finish encoding");
+    println!("🎥 Video saved to {}", output_file);
+
+    Ok(())
 }
