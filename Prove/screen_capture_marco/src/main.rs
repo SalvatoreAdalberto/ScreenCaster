@@ -10,6 +10,7 @@ use ffmpeg_sidecar::{
     paths::sidecar_dir,
     version::ffmpeg_version,
 };
+use ffmpeg_sidecar::child::FfmpegChild;
 
 fn main() {
     if let Err(e) = check_ffmpeg() {
@@ -17,21 +18,7 @@ fn main() {
         return;
     }
 
-    let mut command = FfmpegCommand::new();
-    command.arg("-f")
-        .arg("avfoundation")
-        .arg("-capture_cursor")
-        .arg("1")
-        .arg("-i")
-        .arg("1:")
-        .arg("-r")
-        .arg("30")
-        .arg("-vf")
-        .arg("crop=1000:1000:0:500")//selected_width:selected_height:horizontal_offset:vertical_offset (from top-left corner)
-        .arg("-y")
-        .arg("output.mp4");
-
-    let mut output = command.spawn().unwrap();
+    let mut output = start_recording().unwrap();
     let mut child_stdin =  output.take_stdin().unwrap();
 
     let _ = thread::spawn(move || {
@@ -95,4 +82,37 @@ fn ffmpeg_download_url_custom() -> Result<&'static str, &'static str> {
     } else {
         Err("Unsupported platform")
     }
+}
+
+fn start_recording() -> Result<FfmpegChild, &'static str> {
+    let mut command = FfmpegCommand::new();
+
+    #[cfg(target_os = "macos")]
+    {
+        command.arg("-f")
+            .arg("avfoundation")
+            .arg("-capture_cursor")
+            .arg("1")
+            .arg("-i")
+            .arg("1:")
+            .arg("-r")
+            .arg("30")
+            .arg("-vf")
+            .arg("crop=1000:1000:0:500") //selected_width:selected_height:horizontal_offset:vertical_offset (from top-left corner)
+            .arg("-y")
+            .arg("output.mp4");
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        command.args("-f gdigrab -framerate 30 -offset_x 10 -offset_y 20 -video_size 640x480 -show_region 1 -i desktop -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -y output.mp4".split(" "));
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        return Err("Unsupported platform");
+    }
+
+    let result = command.spawn().unwrap();
+    Ok(result)
 }
