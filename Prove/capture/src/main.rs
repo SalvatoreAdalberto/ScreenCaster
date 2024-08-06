@@ -1,4 +1,4 @@
-use screen_capure_marco::mp4::Encoder;
+use capture::mp4::Encoder;
 use scap::{
     capturer::{Area, Capturer, Options, Point, Size},
     frame::Frame,
@@ -7,10 +7,11 @@ use image::DynamicImage;
 use image::ImageBuffer;
 use ffmpeg_sidecar::{
     command::ffmpeg_is_installed,
-    download::{check_latest_version, download_ffmpeg_package, ffmpeg_download_url, unpack_ffmpeg},
+    download::{download_ffmpeg_package, unpack_ffmpeg},
     paths::sidecar_dir,
-    version::ffmpeg_version,
   };
+use std::process::Command;
+
 fn ffmpeg_download_url_custom() -> Result<&'static str, &'static str> {
     if cfg!(all(target_os = "windows", target_arch = "x86_64")) {
       Ok("https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip") // working
@@ -23,24 +24,40 @@ fn ffmpeg_download_url_custom() -> Result<&'static str, &'static str> {
     } else {
       Err("Unsupported platform")}
   }
+
+fn check_and_download_ffmpeg() -> Result<(), Box<dyn std::error::Error>> {
+    if ffmpeg_is_installed() {
+        println!("FFmpeg is already installed");
+    } else {
+        let mut d_attempts = 0;
+        let download_url = ffmpeg_download_url_custom()?;
+        let destination = sidecar_dir()?;
+        let archive_path = loop {
+          println!("Attempt {:?}) Downloading from: {:?}", d_attempts, download_url);
+          match download_ffmpeg_package(&download_url, &destination){
+              Ok(path) => break Ok(path),
+              Err(e) => {
+                d_attempts += 1;
+                  if d_attempts >= 3 {
+                      break Err(e); // Return the last error after max retries
+                  }
+              }
+          }
+        }?;
+        println!("Downloaded package: {:?}", archive_path);
+        unpack_ffmpeg(&archive_path, &destination)?;
+    }
+    Ok(())
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let download_url = ffmpeg_download_url_custom()?;
-  let destination = sidecar_dir()?;
-
-  // By default the download will use a `curl` command. You could also write
-  // your own download function and use another package like `reqwest` instead.
-  println!("Downloading from: {:?}", download_url);
-  let archive_path = download_ffmpeg_package(download_url, &destination)?;
-  println!("Downloaded package: {:?}", archive_path);
-
-  // Extraction uses `tar` on all platforms (available in Windows since version 1803)
-  println!("Extracting...");
-  unpack_ffmpeg(&archive_path, &destination)?;
-    let framerate = 30;
+    
+    let framerate_f = 60.0;
+    let framerate_u = 60;
     let output_file = "output.mp4";
 
     let options = Options {
-        fps: framerate,
+        fps: framerate_u,
         show_cursor: true,
         show_highlight: true,
         excluded_targets: None,
@@ -59,23 +76,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let [width,height] = recorder.get_output_frame_size();
 
-    let mut encoder = Encoder::new(output_file, width, height, framerate)?;
+    let mut encoder = Encoder::new(output_file, width, height, framerate_f).unwrap();
+    
+    // for _ in 0..100 {
+    //     let frame = recorder.get_next_frame()?;
 
-    for _ in 0..100 {
-        let frame = recorder.get_next_frame()?;
+    //     match frame {
+    //         Frame::BGRA(frame) => {
+    //             let img = DynamicImage::ImageBgra8(ImageBuffer::from_raw(width, height, frame.data).unwrap());
+    //             encoder.encode(&img)?;
+    //         }
+    //         _ => continue,
+    //     };
+    // }
 
-        match frame {
-            Frame::BGRA(frame) => {
-                let img = DynamicImage::ImageBgra8(ImageBuffer::from_raw(width, height, frame.data).unwrap());
-                encoder.encode(&img)?;
-            }
-            _ => continue,
-        };
-    }
+    // encoder.close()?;
 
-    encoder.close()?;
-
-    println!("🎥 Video saved to {}", output_file);
+    // println!("🎥 Video saved to {}", output_file);
 
     Ok(())
 }
