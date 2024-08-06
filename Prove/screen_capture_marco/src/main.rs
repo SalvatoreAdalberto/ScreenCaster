@@ -12,13 +12,27 @@ use ffmpeg_sidecar::{
 };
 use ffmpeg_sidecar::child::FfmpegChild;
 
+pub struct CropArea {
+    width: u32,
+    height: u32,
+    x_offset: u32,
+    y_offset: u32,
+}
+
 fn main() {
     if let Err(e) = check_ffmpeg() {
         eprintln!("Error checking FFmpeg: {:?}", e);
         return;
     }
 
-    let mut output = start_recording().unwrap();
+    let crop = CropArea {
+        width: 500,
+        height: 1000,
+        x_offset: 1000,
+        y_offset: 500,
+    };
+
+    let mut output = start_recording(Some(crop)).unwrap();
     let mut child_stdin =  output.take_stdin().unwrap();
 
     let _ = thread::spawn(move || {
@@ -84,28 +98,34 @@ fn ffmpeg_download_url_custom() -> Result<&'static str, &'static str> {
     }
 }
 
-fn start_recording() -> Result<FfmpegChild, &'static str> {
+fn start_recording(crop: Option<CropArea>) -> Result<FfmpegChild, &'static str> {
     let mut command = FfmpegCommand::new();
 
     #[cfg(target_os = "macos")]
     {
-        command.arg("-f")
-            .arg("avfoundation")
-            .arg("-capture_cursor")
-            .arg("1")
-            .arg("-i")
-            .arg("1:")
-            .arg("-r")
-            .arg("30")
-            .arg("-vf")
-            .arg("crop=1000:1000:0:500") //selected_width:selected_height:horizontal_offset:vertical_offset (from top-left corner)
-            .arg("-y")
-            .arg("output.mp4");
+        match crop {
+            Some(crop) => {
+                let com = format!("-f avfoundation -capture_cursor 1 -i 1: -r 30 -vf crop={}:{}:{}:{} -y output.mp4", crop.width, crop.height, crop.x_offset, crop.y_offset);
+                command.args(com.split(" "));
+            }
+            None => {
+                command.args("-f avfoundation -capture_cursor 1 -i 1: -r 30 -y output.mp4".split(" "));
+            }
+        }
+
     }
 
     #[cfg(target_os = "windows")]
     {
-        command.args("-f gdigrab -framerate 30 -offset_x 10 -offset_y 20 -video_size 640x480 -show_region 1 -i desktop -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -y output.mp4".split(" "));
+        match crop {
+            Some(crop) => {
+                let com = format!("-f gdigrab -framerate 30 -offset_x {} -offset_y {} -video_size {}x{} -show_region 1 -i desktop -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -y output.mp4", crop.x_offset, crop.y_offset, crop.width, crop.height);
+                command.args(com.split(" "));
+            }
+            None => {
+                command.args("-f gdigrab -framerate 30 -i desktop -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -y output.mp4".split(" "));
+            }
+        }
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
