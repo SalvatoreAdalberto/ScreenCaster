@@ -147,7 +147,7 @@ fn start_recording(crop: Option<CropArea>) -> Result<FfmpegChild, &'static str> 
                 command.args(com.split(" "));
             }
             None => {
-                command.args("-f kmsgrab -i - -vf 'hwmap=derive_device=vaapi,scale_vaapi=w=1920:h=1080:format=nv12' -c:v h264_vaapi output_kms.mp4".split(" "));
+                command.args("-device /dev/dri/card0 -f kmsgrab -i - -vf hwmap,format=nv12 -c:v h264 -y output.mp4".split(" "));
             }
         }
     }
