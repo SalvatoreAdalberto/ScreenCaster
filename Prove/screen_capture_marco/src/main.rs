@@ -32,7 +32,15 @@ fn main() {
         y_offset: 500,
     };
 
-    let mut output = start_recording(Some(crop)).unwrap();
+    let mut rec = start_recording(None);
+    match rec {
+        Err(e) => {
+            println!("Error starting recording: {:?}", e);
+            return;
+        },
+        Ok(_) => {}
+    }
+    let mut output = rec.unwrap();
     let mut child_stdin =  output.take_stdin().unwrap();
 
     let _ = thread::spawn(move || {
@@ -89,7 +97,10 @@ fn ffmpeg_download_url_custom() -> Result<&'static str, &'static str> {
         Ok("https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip")
     } else if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
         Ok("https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz")
-    } else if cfg!(all(target_os = "macos", target_arch = "x86_64")) {
+    } else if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
+        Ok("https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-arm64-static.tar.xz")
+    }
+     else if cfg!(all(target_os = "macos", target_arch = "x86_64")) {
         Ok("https://evermeet.cx/ffmpeg/getrelease")
     } else if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
         Ok("https://www.osxexperts.net/ffmpeg7arm.zip")
@@ -128,7 +139,20 @@ fn start_recording(crop: Option<CropArea>) -> Result<FfmpegChild, &'static str> 
         }
     }
 
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    #[cfg(target_os = "linux")]
+    {
+        match crop {
+            Some (crop) => {
+                let com = format!("-f x11grab -framerate 30 -video_size {}x{} -i :0.0+{},{} -y output.mkv", crop.width, crop.height, crop.x_offset, crop.y_offset);
+                command.args(com.split(" "));
+            }
+            None => {
+                command.args("-f x11grab -i :0.0 -framerate 30 -vcodec libx264 -pix_fmt yuv420p -preset ultrafast -y output.mp4".split(" "));
+            }
+        }
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os="linux")))]
     {
         return Err("Unsupported platform");
     }
