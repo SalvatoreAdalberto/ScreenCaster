@@ -27,12 +27,12 @@ fn main() {
 
     let crop = CropArea {
         width: 500,
-        height: 1000,
-        x_offset: 1000,
-        y_offset: 500,
+        height: 500,
+        x_offset: 100,
+        y_offset: 300,
     };
 
-    let mut rec = start_recording(None);
+    let mut rec = start_recording(Some(crop));
     match rec {
         Err(e) => {
             println!("Error starting recording: {:?}", e);
@@ -143,11 +143,11 @@ fn start_recording(crop: Option<CropArea>) -> Result<FfmpegChild, &'static str> 
     {
         match crop {
             Some (crop) => {
-                let com = format!("-f x11grab -framerate 30 -video_size {}x{} -i :0.0+{},{} -y output.mkv", crop.width, crop.height, crop.x_offset, crop.y_offset);
+                let com = format!("-f x11grab -framerate 30 -s {}x{} -i :0.0+{},{} -y output.mkv", crop.width, crop.height, crop.x_offset, crop.y_offset);
                 command.args(com.split(" "));
             }
             None => {
-                command.args("-device /dev/dri/card0 -f kmsgrab -i - -vf hwmap,format=nv12 -c:v h264 -y output.mp4".split(" "));
+                command.args("-f x11grab -framerate 30 -i :0.0 -y output.mkv".split(" "));
             }
         }
     }
@@ -156,7 +156,7 @@ fn start_recording(crop: Option<CropArea>) -> Result<FfmpegChild, &'static str> 
     {
         return Err("Unsupported platform");
     }
-
+    println!("{:?}", command.get_args());
     let result = command.spawn().unwrap();
     Ok(result)
 }
