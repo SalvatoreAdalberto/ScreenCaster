@@ -147,7 +147,10 @@ fn start_recording(crop: Option<CropArea>) -> Result<FfmpegChild, &'static str> 
                 command.args(com.split(" "));
             }
             None => {
-                command.args("-f x11grab -i :0.0 -framerate 30 -vcodec libx264 -pix_fmt yuv420p -preset ultrafast -y output.mp4".split(" "));
+                command.args("-f kmsgrab -framerate 30 -i -".split(" "))
+                    .arg("-vf")
+                    .arg("hwmap=derive_device=vaapi, scale_caapi=w=1920:h=1080:format=nv12")
+                    .args("-r 30 -c:v h264_vaapi -y output.mp4".split(" "));
             }
         }
     }
