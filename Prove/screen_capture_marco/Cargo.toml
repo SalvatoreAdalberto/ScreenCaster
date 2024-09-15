@@ -6,3 +6,5 @@ edition = "2021"
 [dependencies]
 ffmpeg-sidecar = "1.1.0"
 anyhow = "1.0.86"
+iced = { version = "0.10.0", features = ["wgpu"] }
+winit = "0.30.5"
