@@ -1,5 +1,8 @@
 .DS_Store
-./Prove/capture/target/*
-./Prove/gui/target/*
-./Prove/network/target/*
-./Prove/screen_capture_marco/target/*
+./Prove/capture/target/debug/
+./Prove/gui/target/debug/
+./Prove/network/target/debug/
+./Prove/screen_capture_marco/target/debug/
+./Prove/network_server/target/debug/
+./Prove/network_client/target/debug/
+./Prove/network_client_gui/target/debug/
