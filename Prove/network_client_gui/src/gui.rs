@@ -1,9 +1,11 @@
-use iced::{Settings, Application, Command, Element, Theme};
+use iced::{Settings, Application, Command, Element, Theme, Renderer};
 use iced::widget::{button::Button, image, text::Text, container::Container, Column};
 use crate::video_player::{VideoPlayer, Message};
 
 struct MyApp {
     video_player: VideoPlayer,
+    frame_counter: u64,
+
 }
 
 impl Application for MyApp {
@@ -14,7 +16,7 @@ impl Application for MyApp {
 
     fn new(_flags: Self::Flags) -> (Self, Command<Self::Message>) {
         let video_player = VideoPlayer::new();
-        (MyApp { video_player }, Command::none())
+        (MyApp { video_player , frame_counter: 0}, Command::none())
     }
 
     fn title(&self) -> String {
@@ -23,7 +25,9 @@ impl Application for MyApp {
 
     fn update(&mut self, message: Self::Message) -> Command<Self::Message> {
         // Delegate message handling to VideoPlayer
+        self.frame_counter += 1;
         self.video_player.update(message)
+        
     }
 
     fn view(&self) -> Element<Self::Message> {
@@ -36,7 +40,11 @@ impl Application for MyApp {
         let video_frame = self.video_player.video_frame.lock().unwrap();
         let video_display = if let Some(handle) = &*video_frame {
             // Render video frame
-            Container::new(image::Image::new(handle.clone()))
+            
+            Container::new(Column::<Message, Theme, Renderer>::new()    
+                .push(Text::new(format!("Frame: {}", self.frame_counter)))
+                .push(image::Image::new(handle.clone())))
+                
         } else {
             // Placeholder when no frame is available
             Container::new(Text::new("No video")).into()

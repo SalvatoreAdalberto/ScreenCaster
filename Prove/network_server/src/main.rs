@@ -14,7 +14,7 @@ async fn main() -> std::io::Result<()> {
     // Crea il comando ffmpeg per catturare il video
     let ffmpeg_command = vec![
         "-f", "avfoundation",               // Formato input per catturare lo schermo
-        "-re" ,                   // Frame rate
+        "-r" , "30",                   // Frame rate
         "-s", "1920x1080",             // Risoluzione dello schermo
         "-capture_cursor",  "1",         // Cattura il cursore
         "-i", "1:",                  // Schermo da catturare
