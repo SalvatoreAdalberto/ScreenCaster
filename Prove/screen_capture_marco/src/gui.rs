@@ -1,9 +1,10 @@
-use iced::widget::{text_input, Button, Column, Container, Row, Text, TextInput, PickList};
+use iced::widget::{text_input, Button, Column, Container, Row, Text, TextInput};
 use iced::{Alignment, Element, Length, Application, Command, Settings, Theme};
 use crate::screen_capture::{ScreenCapture};
 use std::sync::{Arc, Mutex};
-use crate::AppState;
-use iced::keyboard::{KeyCode, Modifiers};
+use global_hotkey::GlobalHotKeyManager;
+use global_hotkey::hotkey::{HotKey, Modifiers};
+use crate::hotkeys::{AppState, parse_key_code};
 
 // Definiamo i messaggi dell'applicazione
 #[derive(Debug, Clone)]
@@ -15,9 +16,10 @@ pub enum Message {
     GoBackHome,
     IpAddressChanged(String),
     SaveIpAddress,
-    KeyPressChanged(KeyCode), // Nuovo messaggio per modificare la shortcut
-    ModifierChanged(Modifiers),
-    SaveShortcuts,            // Messaggio per salvare le shortcut
+    StartRecordHotkeyChanged(String),
+    StopRecordHotkeyChanged(String),
+    GoToChangeHotKeys,
+    SaveHotKeys,
 }
 
 // Stati possibili dell'applicazione
@@ -26,13 +28,7 @@ pub enum AppStateEnum {
     Home,
     Sharing,
     Viewing,
-}
-
-// Struttura per memorizzare le shortcut personalizzate
-#[derive(Debug, Clone)]
-pub struct Shortcut {
-    pub key: KeyCode,
-    pub modifier: Modifiers,
+    ChangeHotKeys,
 }
 
 // Struttura dell'applicazione
@@ -42,38 +38,36 @@ pub struct ScreenCaster {
     ip_input_state: text_input::State,
     screen_capture: ScreenCapture,
     app_state: Arc<Mutex<AppState>>, // Stato condiviso dell'applicazione
-    start_shortcut: Shortcut,        // Shortcut per avviare la registrazione
-    stop_shortcut: Shortcut,         // Shortcut per fermare la registrazione
-    key_list: Vec<KeyCode>,          // Lista di tasti disponibili
-    modifier_list: Vec<Modifiers>,   // Lista di modificatori disponibili
+    manager: Arc<Mutex<GlobalHotKeyManager>>,
+    start_hotkey: HotKey,
+    stop_hotkey: HotKey,
+    start_id: Arc<Mutex<u32>>,
+    stop_id: Arc<Mutex<u32>>,
+    start_shortcut: String,        // Shortcut per avviare la registrazione
+    stop_shortcut: String,         // Shortcut per fermare la registrazione
 }
 
 impl Application for ScreenCaster {
+    type Executor = iced::executor::Default;
     type Message = Message;
     type Theme = Theme;
-    type Executor = iced::executor::Default;
-    type Flags = Arc<Mutex<AppState>>;
+    type Flags = (Arc<Mutex<AppState>>, Arc<Mutex<GlobalHotKeyManager>>, Arc<Mutex<u32>>, Arc<Mutex<u32>>, HotKey, HotKey);
 
-    fn new(app_state: Self::Flags) -> (Self, Command<Self::Message>) {
+    fn new(flags: Self::Flags) -> (Self, Command<Self::Message>) {
         (
             ScreenCaster {
                 state: AppStateEnum::Home,
                 ip_address: String::new(),
                 ip_input_state: text_input::State::new(),
                 screen_capture: ScreenCapture::new(),
-                app_state,
-                start_shortcut: Shortcut {
-                    key: KeyCode::H,
-                    modifier: Modifiers::CTRL,
-                },
-                stop_shortcut: Shortcut {
-                    key: KeyCode::F,
-                    modifier: Modifiers::CTRL,
-                },
-                key_list: vec![
-                    KeyCode::A, KeyCode::B, KeyCode::C, KeyCode::H, KeyCode::F, // Aggiungi tutti i tasti che ti servono
-                ],
-                modifier_list: vec![Modifiers::CTRL, Modifiers::SHIFT, Modifiers::LOGO],
+                app_state: flags.0,
+                manager: flags.1,
+                start_hotkey: flags.4,
+                stop_hotkey: flags.5,
+                start_id: flags.2,
+                stop_id: flags.3,
+                start_shortcut: "H".to_string(),
+                stop_shortcut: "F".to_string(),
             },
             Command::none(),
         )
@@ -113,17 +107,47 @@ impl Application for ScreenCaster {
             Message::SaveIpAddress => {
                 println!("Indirizzo IP salvato: {}", self.ip_address);
             }
-            Message::KeyPressChanged(key_code) => {
-                self.start_shortcut.key = key_code; // Aggiorna la shortcut di avvio
+            Message::GoToChangeHotKeys => {
+                self.state = AppStateEnum::ChangeHotKeys
             }
-            Message::ModifierChanged(modifier) => {
-                self.start_shortcut.modifier = modifier; // Aggiorna il modificatore
+            Message::SaveHotKeys => {
+                let manager = self.manager.lock().unwrap();
+
+                manager.unregister_all(&[self.start_hotkey, self.stop_hotkey]).unwrap();
+
+                let start_code = parse_key_code(&self.start_shortcut).unwrap();
+                let stop_code = parse_key_code(&self.stop_shortcut).unwrap();
+
+                #[cfg(target_os = "macos")]
+                let hotkey_record = HotKey::new(Some(Modifiers::SUPER), start_code);
+                #[cfg(not(target_os = "macos"))]
+                let hotkey_record = HotKey::new(Some(Modifiers::CONTROL), start_code);
+
+                #[cfg(target_os = "macos")]
+                let hotkey_stop = HotKey::new(Some(Modifiers::SUPER), stop_code);
+                #[cfg(not(target_os = "macos"))]
+                let hotkey_stop = HotKey::new(Some(Modifiers::CONTROL), stop_code);
+
+                let _ = manager.register(hotkey_record).unwrap();
+                let _ = manager.register(hotkey_stop).unwrap();
+
+                self.start_hotkey = hotkey_record;
+                self.stop_hotkey = hotkey_stop;
+
+                let mut id1 = self.start_id.lock().unwrap();
+                *id1 = hotkey_record.id();
+                let mut id2 = self.stop_id.lock().unwrap();
+                *id2 = hotkey_stop.id();
+
+                println!("Hotkeys modificate!");
+                println!("Start: {}", self.start_shortcut);
+                println!("Stop: {}", self.stop_shortcut);
             }
-            Message::SaveShortcuts => {
-                println!(
-                    "Shortcut salvata: {:?} + {:?}",
-                    self.start_shortcut.modifier, self.start_shortcut.key
-                );
+            Message::StartRecordHotkeyChanged(key) => {
+                self.start_shortcut = key
+            }
+            Message::StopRecordHotkeyChanged(key) => {
+                self.stop_shortcut = key
             }
         }
 
@@ -135,6 +159,7 @@ impl Application for ScreenCaster {
             AppStateEnum::Home => self.view_home(),
             AppStateEnum::Sharing => self.view_sharing(),
             AppStateEnum::Viewing => self.view_viewing(),
+            AppStateEnum::ChangeHotKeys => self.view_change_hotkey(),
         }
     }
 
@@ -164,6 +189,16 @@ impl ScreenCaster {
                             .padding(10)
                             .on_press(Message::GoToViewScreen),
                     ),
+            )
+            .push(
+                Row::new()
+                    .spacing(20)
+                    .align_items(Alignment::Center)
+                    .push(
+                        Button::new(Text::new("Modifica hotkeys"))
+                            .padding(10)
+                            .on_press(Message::GoToChangeHotKeys),
+                    )
             );
 
         Container::new(content)
@@ -249,8 +284,73 @@ impl ScreenCaster {
             .center_y()
             .into()
     }
+
+    fn view_change_hotkey(&self) -> Element<Message> {
+        let content = Column::new()
+            .spacing(20)
+            .align_items(Alignment::Center)
+            .push(Text::new("Configurazione hotkey").size(30))
+            .push(
+                Row::new()
+                    .spacing(20)
+                    .align_items(Alignment::Center)
+                    .push(
+                        Text::new("Inserisci la key per iniziare la registrazione:").size(20)
+                    )
+                    .push(
+                        TextInput::new(
+                            "Inserisci l'hotkey per iniziare la registrazione",
+                            &self.start_shortcut.to_uppercase(),
+                        )
+                            .padding(10)
+                            .width(Length::Fixed(50.0))
+                            .on_input(Message::StartRecordHotkeyChanged),
+                    )
+            )
+            .push(
+                Row::new()
+                    .spacing(20)
+                    .align_items(Alignment::Center)
+                    .push(
+                        Text::new("Inserisci la key per iniziare la registrazione:").size(20)
+                    )
+                    .push(
+                        TextInput::new(
+                            "Inserisci l'hotkey per fermatre la registrazione",
+                            &self.stop_shortcut.to_uppercase(),
+                        )
+                            .padding(10)
+                            .width(Length::Fixed(50.0))
+                            .on_input(Message::StopRecordHotkeyChanged),
+                    )
+            )
+            .push(
+                Row::new()
+                    .spacing(20)
+                    .align_items(Alignment::Center)
+                    .push(
+                        Button::new(Text::new("Salva hotkeys"))
+                            .padding(10)
+                            .width(Length::Fixed(200.0))
+                            .on_press(Message::SaveHotKeys),
+                    )
+                    .push(
+                        Button::new(Text::new("Torna alla Home"))
+                            .padding(10)
+                            .width(Length::Fixed(200.0))
+                            .on_press(Message::GoBackHome),
+                    ),
+            );
+
+        Container::new(content)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center_x()
+            .center_y()
+            .into()
+    }
 }
 
-pub fn run_gui(app_state: Arc<Mutex<AppState>>) {
-    ScreenCaster::run(Settings::with_flags(app_state)).expect("Failed to start application");
+pub fn run_gui(app_state: Arc<Mutex<AppState>>, manager: Arc<Mutex<GlobalHotKeyManager>>, id1: Arc<Mutex<u32>>, id2: Arc<Mutex<u32>>, hotkey_record: HotKey, hotkey_stop: HotKey) {
+    ScreenCaster::run(Settings::with_flags((app_state, manager, id1, id2, hotkey_record, hotkey_stop))).expect("Failed to start application");
 }
