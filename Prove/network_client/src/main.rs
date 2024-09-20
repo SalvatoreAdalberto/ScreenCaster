@@ -62,20 +62,19 @@ async fn main() -> std::io::Result<()> {
     let mut frames = 0;
     
     FfmpegCommand::new()
-        .format("mpegts")
         .input("udp://127.0.0.1:1235")
-        .format("rawvideo")
-        .args(&["-pix_fmt", "rgb24"])
+        .format("image2pipe")
+        //.args(&["-c:v", "libx264"])
         .output("pipe:1")
         .spawn()
         .unwrap()
         .iter()
         .unwrap()
         .for_each(|e| match e {
-            FfmpegEvent::OutputChunk(_) => {println!("CHUNK FOUND"); chunks += 1;},
-            FfmpegEvent::OutputFrame(_) => {println!("FRAME FOUND"); frames += 1;},
+            FfmpegEvent::OutputChunk(c) => {println!("CHUNK FOUND dim: {}B", c.len()); chunks += 1;},
+            FfmpegEvent::OutputFrame(f) => {println!("FRAME FOUND dim: {}B", f.data.len() ); frames += 1;},
             _ => {println!("Other event: {:?}", e);}
-    });
+        });
     // let mut i = 0;
     // loop{
     //     tokio::time::sleep(std::time::Duration::from_secs(1)).await;

@@ -15,13 +15,13 @@ async fn main() -> std::io::Result<()> {
     let ffmpeg_command = vec![
         "-f", "avfoundation",               // Formato input per catturare lo schermo
         "-r" , "30",                   // Frame rate
-        "-s", "1920x1080",             // Risoluzione dello schermo
-        "-capture_cursor",  "1",         // Cattura il cursore
+        "-s", "1280x720",             // Risoluzione dello schermo
+        "-capture_cursor", "1",         // Cattura il cursore
         "-i", "1:",                  // Schermo da catturare
-        "-f", "mpegts",                // Formato output
-        "-codec:v", "mpeg1video",      // Codec video
-        "-b:v", "1M",                  // Bitrate
-        "-bf", "0",                    // Parametro per frame B
+        "-f", "mpegts",              // Formato output
+        "-codec:v", "libx264",      // Codec video
+        "-b:v", "250K",                  // Bitrate
+        "-bf", "2",                    // Parametro per frame B
         "pipe:1",                      // Output su stdout
     ];
 
@@ -29,7 +29,6 @@ async fn main() -> std::io::Result<()> {
     let mut ffmpeg = FfmpegCommand::new().args(ffmpeg_command).spawn().unwrap();
 
     let mut stdout = ffmpeg.take_stdout().unwrap();
-
     let mut buffer = [0; 1024];
     loop {
         // Legge i dati dallo stdout di ffmpeg
