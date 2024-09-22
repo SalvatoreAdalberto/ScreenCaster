@@ -6,5 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-tokio = { version = "1.40", features = ["full"] }
+tokio = { version = "1", features = ["full"] }
+eframe = { version = "*", features = ["default", "wgpu", "__screenshot"] }
+image = { version = "*", features = ["png"] }
 ffmpeg-sidecar = "1.1.0"

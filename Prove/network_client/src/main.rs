@@ -1,115 +1,82 @@
-use tokio::net::UdpSocket;
-use ffmpeg_sidecar::{command::FfmpegCommand, event::FfmpegEvent};
-use std::io::Write;
-use std::process::{Command, Stdio}; 
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+mod utils_ffmpeg;
 
-use ffmpeg_sidecar::{
-    command::ffmpeg_is_installed,
-    download::{check_latest_version, download_ffmpeg_package, unpack_ffmpeg},
-    paths::{sidecar_dir},
-    version::ffmpeg_version,
-};
+use std::sync::mpsc::{self, Receiver, Sender};
+use std::time::{Duration, Instant};
+use eframe::egui;
+use eframe::egui::{ColorImage, TextureHandle};
+use ffmpeg_sidecar::{command::FfmpegCommand};
+use std::thread;
+use crate::utils_ffmpeg::check_ffmpeg;
 
-pub fn check_ffmpeg() -> Result<(), Box<dyn std::error::Error>> {
-    println!("Checking FFmpeg...");
-    if ffmpeg_is_installed() {
-        println!("FFmpeg is already installed!");
-    } else {
-        match check_latest_version() {
-            Ok(version) => println!("Latest available version: {}", version),
-            Err(_) => println!("Skipping version check on this platform."),
+struct MyApp {
+    texture: Option<TextureHandle>,
+    frames: Receiver<ColorImage>, // Condividi i frames tra thread
+}
+
+impl MyApp {
+    fn new(frames: Receiver<ColorImage>) -> Self {
+        Self {
+            texture: None,
+            frames,
         }
-
-        let download_url = ffmpeg_download_url_custom()?;
-        let destination = sidecar_dir()?;
-
-        println!("Downloading from: {:?}", download_url);
-        let archive_path = download_ffmpeg_package(download_url, &destination)?;
-        println!("Downloaded package: {:?}", archive_path);
-
-        println!("Extracting...");
-        unpack_ffmpeg(&archive_path, &destination)?;
-
-        let version = ffmpeg_version()?;
-        println!("FFmpeg version: {}", version);
     }
 
-    println!("Done!");
-    Ok(())
-}
-
-fn ffmpeg_download_url_custom() -> Result<&'static str, &'static str> {
-    if cfg!(all(target_os = "windows", target_arch = "x86_64")) {
-        Ok("https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip")
-    } else if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
-        Ok("https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz")
-    } else if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
-        Ok("https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-arm64-static.tar.xz")
-    }
-    else if cfg!(all(target_os = "macos", target_arch = "x86_64")) {
-        Ok("https://evermeet.cx/ffmpeg/getrelease")
-    } else if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
-        Ok("https://www.osxexperts.net/ffmpeg7arm.zip")
-    } else {
-        Err("Unsupported platform")
+    // Aggiorna immagine a 30 FPS
+    fn update_image(&mut self, ctx: &egui::Context) {
+        if let Ok(image) = self.frames.try_recv() {
+            self.texture = Some(ctx.load_texture("updated_image", image, Default::default()));
+        }
     }
 }
 
-#[tokio::main]
-async fn main() -> std::io::Result<()> {
-    check_ffmpeg().expect("Failed to check FFmpeg");
-    let mut chunks = 0;
-    let mut frames = 0;
-    
-    FfmpegCommand::new()
-        .input("udp://127.0.0.1:1235")
-        .format("image2pipe")
-        //.args(&["-c:v", "libx264"])
-        .output("pipe:1")
-        .spawn()
-        .unwrap()
-        .iter()
-        .unwrap()
-        .for_each(|e| match e {
-            FfmpegEvent::OutputChunk(c) => {println!("CHUNK FOUND dim: {}B", c.len()); chunks += 1;},
-            FfmpegEvent::OutputFrame(f) => {println!("FRAME FOUND dim: {}B", f.data.len() ); frames += 1;},
-            _ => {println!("Other event: {:?}", e);}
+impl eframe::App for MyApp {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.update_image(ctx);
+
+        egui::CentralPanel::default().show(ctx, |ui| {
+            if let Some(texture) = &self.texture {
+                ui.image(texture.id(), ui.available_size());
+            } else {
+                ui.label("Nessuna immagine disponibile.");
+            }
         });
-    // let mut i = 0;
-    // loop{
-    //     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-    //     println!("Chunks: {}", chunks);
-    //     println!("Frames: {}", frames);
-    //     if i > 1000 {
-    //         break;
-    //     }
-    //     i += 1;
-    // }
 
-    // Crea un socket UDP per ricevere i dati
-    // let socket = UdpSocket::bind("127.0.0.1:1235").await?;
-    // // Crea il comando FFmpeg utilizzando ffmpeg-sidecar per visualizzare il video
-    // let ffmpeg_command = vec![
-    //     "-f", "mpegts",               // Formato input MPEG-TS
-    //     "-i", "pipe:0",               // Input da stdin
-    //     "-c:v", "libx264",            // Usa il codec H.264 per il video
-    //     "-preset", "fast",            // Preset di compressione veloce
-    //     "-crf", "23",                 // Fattore di qualità (23 è la qualità visiva ottimale predefinita)
-    //     "-f", "mp4",                  // Formato di output
-    //     "-y", "output.mp4"                  // Nome del file di output
-    // ];
-    // // Avvia FFmpeg con ffmpeg-sidecar
-    // let mut ffmpeg = FfmpegCommand::new().args(ffmpeg_command).spawn().unwrap();
-    // let mut ffmpeg_stdin = ffmpeg.take_stdin().unwrap();
-    // let mut buffer = [0; 1024];
-    // loop {
-    //     // Riceve i pacchetti UDP dal server
-    //     let (n, _addr) = socket.recv_from(&mut buffer).await?;
-    //     if n == 0 {
-    //         break;
-    //     }
-    //     // Scrive i pacchetti nel stdin di FFmpeg per la visualizzazione
-    //     ffmpeg_stdin.write_all(&buffer[..n]).unwrap();
-    // }
-    Ok(())
+        ctx.request_repaint_after(Duration::from_secs_f32(1.0 / 30.0));
+    }
+}
+
+fn main() {
+    check_ffmpeg().expect("Errore nel controllo di FFmpeg");
+    // Creare canale per inviare i frame
+    let (sender, receiver): (Sender<ColorImage>, Receiver<ColorImage>) = mpsc::channel();
+
+    // Creare thread separato per ricevere i frame da ffmpeg
+    let sender_clone = sender.clone();
+
+    thread::spawn(move || {
+        // Configura ffmpeg-sidecar per ricevere dati tramite UDP
+        let mut ffmpeg_command = FfmpegCommand::new()
+            .input("udp://127.0.0.1:1235")
+            .rawvideo()
+            .spawn()
+            .expect("Impossibile avviare ffmpeg");
+
+        // Itera sugli eventi di output di ffmpeg
+        ffmpeg_command.iter().expect("Errore iterando i frame").filter_frames().for_each(|e| {
+            // Convertire i dati del frame in ColorImage
+            let width = e.width as usize;
+            let height = e.height as usize;
+
+            let image_data = ColorImage::from_rgb([width, height], &e.data);
+            sender_clone.send(image_data).expect("Errore nell'invio del frame");
+        });
+    });
+
+    // Configura la GUI
+    let options = eframe::NativeOptions {
+        vsync: true,
+        ..Default::default()
+    };
+    eframe::run_native("Image Viewer 30 FPS", options, Box::new(|_cc| Box::new(MyApp::new(receiver))));
 }
