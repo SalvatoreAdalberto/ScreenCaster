@@ -7,6 +7,6 @@ edition = "2021"
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }
-eframe = { version = "*", features = ["default", "wgpu", "__screenshot"] }
-image = { version = "*", features = ["png"] }
+eframe = { version = "0.20.1", features = ["default", "wgpu", "__screenshot"] }
+image = { version = "0.24.9", features = ["png"] }
 ffmpeg-sidecar = "1.1.0"
