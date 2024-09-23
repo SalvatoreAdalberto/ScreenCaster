@@ -48,4 +48,8 @@ fn ffmpeg_download_url_custom() -> Result<&'static str, &'static str> {
     } else {
         Err("Unsupported platform")
     }
+<<<<<<< HEAD
 }
+=======
+}
+>>>>>>> c45f7943 (implemented workers and workersmanager, actually working but not speeding that much, just at the start)

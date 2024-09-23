@@ -1,19 +1,21 @@
 use iced::Command;
 use iced::widget::image::Handle;
 use ffmpeg_sidecar::{command::FfmpegCommand, event::FfmpegEvent, event::OutputVideoFrame};
-use ffmpeg_sidecar::child::FfmpegChild;
 use tokio::sync::{Mutex as tokio_Mutex, mpsc};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Condvar};
+use std::sync::mpsc as sync_mpsc;
+use std::thread::JoinHandle;
 use image::{ImageBuffer, Rgb};
-use tokio::task::JoinHandle;
+use tokio::task::JoinHandle as tokio_JoinHandle;
 use iced_futures::subscription::{self, Subscription};
-use std::io::Read;
+use tokio::time::{sleep, Duration};
+
 
 pub struct VideoPlayer {
    pub video_frame: Arc<Mutex<Option<Handle>>>, 
     state: PlayerState,
-    decoder_handle: Option<JoinHandle<()>>,
-    processing_handle: Option<JoinHandle<()>>,
+    decoder_handle: Option<tokio_JoinHandle<()>>,
+    processing_handle: Option<tokio_JoinHandle<()>>,
     frame_receiver: Arc<tokio_Mutex<Option<mpsc::UnboundedReceiver<Handle>>>>,
 }
 
@@ -42,7 +44,7 @@ impl VideoPlayer {
             | ( frame_receiver, video_frame) | async move {
                 let mut receiver_guard = frame_receiver.lock().await;
                 if let Some(receiver) = receiver_guard.as_mut() {
-                    let handle =  receiver.recv().await.unwrap();
+                    let handle: Handle =  receiver.recv().await.unwrap();
                     let mut frame_lock = video_frame.lock().unwrap();
                     *frame_lock = Some(handle);
                 }
@@ -85,7 +87,7 @@ impl VideoPlayer {
         let (frame_sender, frame_receiver) = mpsc::unbounded_channel();
         self.frame_receiver = Arc::new(tokio_Mutex::new(Some(frame_receiver)));
         let decoder_handle = tokio::spawn(async move {
-            VideoDecoder::start("udp://127.0.0.1:1235", frame_sender);
+            VideoDecoder::start("udp://127.0.0.1:1235", frame_sender).await;
             println!("0 Video decoder started");
         });
 
@@ -124,27 +126,39 @@ pub struct VideoDecoder {
 
 impl VideoDecoder {
     
-    pub fn start(stream_url: &str, frame_sender: mpsc::UnboundedSender<Handle>) {
+    pub async fn start(stream_url: &str, frame_sender: mpsc::UnboundedSender<Handle>) {
+        //let (tx, rx) = sync_mpsc::channel();
         FfmpegCommand::new()
         .format("mpegts")
         .input(stream_url)
         .format("rawvideo")
+        .args(&["-vf", "scale=1280:720"])
+        .args(&["-compression_level","5"])
+        //.args(&["-q:v","5"])
+        //.args(&["",""])
+        // .format("image2pipe")
         .args(&["-pix_fmt", "rgb24"])
         .output("pipe:1")
         .spawn()
         .unwrap()
         .iter()
         .unwrap()
-        .filter_frames()
-        .for_each(|f| {
+        //.filter_frames()
+        .for_each(|e| 
+            
+            match e {
+            FfmpegEvent::OutputFrame(f) =>{
             let sender_clone = frame_sender.clone();
             tokio::spawn( async move{
+                sleep(Duration::from_millis(330)).await;
                 if let Ok(handle) = VideoDecoder::process_frame(f.data, f.width, f.height) {
                     sender_clone.send(handle).unwrap();
                 }else{
                     println!("Error processing frame");
                 }
             });
+        },
+            _ => { println!("Other event: {:?}", e)}
         });
 
     }
@@ -152,16 +166,16 @@ impl VideoDecoder {
     pub fn process_frame(frame: Vec<u8>, width: u32, height: u32) -> Result<Handle, ()> {
         let img_buffer = ImageBuffer::<Rgb<u8>, _>::from_raw(width, height, frame).unwrap();
         let png_data = image::DynamicImage::ImageRgb8(img_buffer).to_rgba8();
-        unsafe {
-            if COUNTER % 10 == 0 {
-                let c = format!("out_{}.png", COUNTER);   
-                png_data.save(c).unwrap();
-            }
-            COUNTER += 1;
-        }
+        // unsafe {
+        //     if COUNTER % 10 == 0 {
+        //         let c = format!("out_{}.webp", COUNTER);   
+        //         png_data.save(c).unwrap();
+        //     }
+        //     COUNTER += 1;
+        // }
         Ok(Handle::from_memory(png_data.to_vec()))
     }
-
+    
 }
 
 static mut COUNTER: i32 = 0;
@@ -173,6 +187,11 @@ pub enum Message {
     FrameUpdate(Arc<Mutex<Option<Handle>>>), 
 }
 
+// struct WorkersManager{
+//     n_workers: usize,
+//     turn: 
+//     workers: Vec<JoinHandle<()>>,
+// }
 
             //Read each packet at a time packing them in mpeg1 frames
             // let mut stdout = process.take_stdout().expect("No stdout");

@@ -1,12 +1,14 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod utils_ffmpeg;
+mod workers;
 
+use std::sync::{Arc};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::{Duration, Instant};
 use eframe::egui;
-use eframe::egui::{ColorImage, TextureHandle};
+use eframe::egui::{ColorImage, TextureHandle, Image};
 use ffmpeg_sidecar::{command::FfmpegCommand};
-use std::thread;
+use std::thread::{self, spawn};
 use crate::utils_ffmpeg::check_ffmpeg;
 
 struct MyApp {
@@ -36,7 +38,7 @@ impl eframe::App for MyApp {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             if let Some(texture) = &self.texture {
-                ui.image(texture.id(), ui.available_size());
+                ui.add(Image::new(texture).fit_to_exact_size(ui.available_size()));
             } else {
                 ui.label("Nessuna immagine disponibile.");
             }
@@ -49,28 +51,28 @@ impl eframe::App for MyApp {
 fn main() {
     check_ffmpeg().expect("Errore nel controllo di FFmpeg");
     // Creare canale per inviare i frame
-    let (sender, receiver): (Sender<ColorImage>, Receiver<ColorImage>) = mpsc::channel();
 
-    // Creare thread separato per ricevere i frame da ffmpeg
-    let sender_clone = sender.clone();
+    let (sender_image, receiver_image): (Sender<ColorImage>, Receiver<ColorImage>) = mpsc::channel();
 
-    thread::spawn(move || {
+    
         // Configura ffmpeg-sidecar per ricevere dati tramite UDP
-        let mut ffmpeg_command = FfmpegCommand::new()
+    let mut ffmpeg_command = FfmpegCommand::new()
             .input("udp://127.0.0.1:1235")
             .rawvideo()
             .spawn()
             .expect("Impossibile avviare ffmpeg");
 
+    let w_manager = Arc::new(workers::WorkersManger::new(8, sender_image));
+    let w_manager2 = w_manager.clone();
+    thread::spawn(move || {
         // Itera sugli eventi di output di ffmpeg
         ffmpeg_command.iter().expect("Errore iterando i frame").filter_frames().for_each(|e| {
-            // Convertire i dati del frame in ColorImage
-            let width = e.width as usize;
-            let height = e.height as usize;
-
-            let image_data = ColorImage::from_rgb([width, height], &e.data);
-            sender_clone.send(image_data).expect("Errore nell'invio del frame");
+            w_manager2.execute(e)
         });
+    });
+
+    thread::spawn(move ||{
+        w_manager.activate();
     });
 
     // Configura la GUI
@@ -78,5 +80,5 @@ fn main() {
         vsync: true,
         ..Default::default()
     };
-    eframe::run_native("Image Viewer 30 FPS", options, Box::new(|_cc| Box::new(MyApp::new(receiver))));
+    eframe::run_native("Image Viewer 30 FPS", options, Box::new(|_cc| Ok(Box::new(MyApp::new(receiver_image)))));
 }

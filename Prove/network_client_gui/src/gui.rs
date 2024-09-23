@@ -43,7 +43,7 @@ impl Application for MyApp {
             
             Container::new(Column::<Message, Theme, Renderer>::new()    
                 .push(Text::new(format!("Frame: {}", self.frame_counter)))
-                .push(image::Image::new(handle.clone())))
+                .push(image::Image::new(handle.clone()).width(iced::Length::Fill).height(iced::Length::Fill)))
                 
         } else {
             // Placeholder when no frame is available
