@@ -2,14 +2,21 @@
 mod utils_ffmpeg;
 mod workers;
 
+use rayon::prelude::*;
 use std::sync::{Arc};
 use std::sync::mpsc::{self, Receiver, Sender};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use eframe::egui;
 use eframe::egui::{ColorImage, TextureHandle, Image};
 use ffmpeg_sidecar::{command::FfmpegCommand};
-use std::thread::{self, spawn};
+use std::thread;
 use crate::utils_ffmpeg::check_ffmpeg;
+
+struct Frame{
+    data: Vec<u8>,
+    width: u32,
+    height: u32,
+}
 
 struct MyApp {
     texture: Option<TextureHandle>,
@@ -58,6 +65,7 @@ fn main() {
         // Configura ffmpeg-sidecar per ricevere dati tramite UDP
     let mut ffmpeg_command = FfmpegCommand::new()
             .input("udp://127.0.0.1:1235")
+            .args(&["-vf", "scale=1920:1080"])
             .rawvideo()
             .spawn()
             .expect("Impossibile avviare ffmpeg");
@@ -66,8 +74,13 @@ fn main() {
     let w_manager2 = w_manager.clone();
     thread::spawn(move || {
         // Itera sugli eventi di output di ffmpeg
-        ffmpeg_command.iter().expect("Errore iterando i frame").filter_frames().for_each(|e| {
-            w_manager2.execute(e)
+        ffmpeg_command.iter().expect("Errore iterando i frame").for_each(|e| {
+            match e {
+                ffmpeg_sidecar::event::FfmpegEvent::OutputFrame(frame) =>  w_manager2.execute(frame),                
+                _ => println!("Event: {:?}", e),
+            }
+            //println!("len: {:?} ", e);
+            
         });
     });
 
