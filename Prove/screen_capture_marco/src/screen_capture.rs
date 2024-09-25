@@ -76,11 +76,11 @@ impl ScreenCapture {
         {
             match crop {
                 Some(crop) => {
-                    let com = format!("-f avfoundation -capture_cursor 1 -i 1: -r 30 -vf crop={}:{}:{}:{} -y output_5.mp4", crop.width, crop.height, crop.x_offset, crop.y_offset);
+                    let com = format!("-f avfoundation -r 30 -capture_cursor 1 -i 1:  -vf crop={}:{}:{}:{} -f rawvideo -y output_5.mp4", crop.width, crop.height, crop.x_offset, crop.y_offset);
                     command.args(com.split(" "));
                 }
                 None => {
-                    command.args("-f avfoundation -capture_cursor 1 -i 1: -r 30 -y output_5.mp4".split(" "));
+                    command.args("-f avfoundation -r 30 -s 1280x720 -capture_cursor 1 -i 1: -f rawvideo -y output_5.mp4".split(" "));
                 }
             }
         }
@@ -89,11 +89,11 @@ impl ScreenCapture {
         {
             match crop {
                 Some(crop) => {
-                    let com = format!("-f gdigrab -framerate 30 -offset_x {} -offset_y {} -video_size {}x{} -show_region 1 -i desktop -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -y output.mp4", crop.x_offset, crop.y_offset, crop.width, crop.height);
+                    let com = format!("-f gdigrab -framerate 30 -offset_x {} -offset_y {} -video_size {}x{} -show_region 1 -i desktop -c:v libx264 -f rawvideo -y output.mp4", crop.x_offset, crop.y_offset, crop.width, crop.height);
                     command.args(com.split(" "));
                 }
                 None => {
-                    command.args("-f gdigrab -framerate 30 -i desktop -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -y output.mp4".split(" "));
+                    command.args("-f gdigrab -framerate 30 -i desktop -c:v libx264 -f rawvideo -y output.mp4".split(" "));
                 }
             }
         }
@@ -106,7 +106,7 @@ impl ScreenCapture {
                     command.args(com.split(" "));
                 }
                 None => {
-                    command.args("-device /dev/dri/card0 -f kmsgrab -i - -vf hwmap,format=nv12 -c:v h264 -y output.mp4".split(" "));
+                    command.args("-f x11grab -framerate 30 -y output.mp4".split(" "));
                 }
             }
         }
