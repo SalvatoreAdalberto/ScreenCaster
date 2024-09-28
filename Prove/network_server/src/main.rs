@@ -17,7 +17,8 @@ async fn main() -> std::io::Result<()> {
         "-i", "1:",                  // Schermo da catturare
         "-f", "rawvideo",              // Formato output
         "-codec:v", "libx264",      // Codec video
-        "-b:v", "2M",                  // Bitrate
+        "-preset", "ultrafast",       // Preset di compressione veloce
+        "-b:v", "3M",                  // Bitrate
         "udp://127.0.0.1:1235",                      // Output su stdout
     ];
 
