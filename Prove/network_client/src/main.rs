@@ -70,7 +70,7 @@ fn main() {
             .spawn()
             .expect("Impossibile avviare ffmpeg");
 
-    let w_manager = Arc::new(workers::WorkersManger::new(5, sender_image));
+    let w_manager = Arc::new(workers::WorkersManger::new(3, sender_image));
     let w_manager2 = w_manager.clone();
     thread::spawn(move || {
         // Itera sugli eventi di output di ffmpeg
