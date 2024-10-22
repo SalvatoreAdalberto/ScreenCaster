@@ -64,7 +64,7 @@ fn main() {
     
         // Configura ffmpeg-sidecar per ricevere dati tramite UDP
     let mut ffmpeg_command = FfmpegCommand::new()
-            .input("udp:/192.168.1.13:1235")
+            .input("udp:/192.168.1.13:1236")
             .args(&["-vf", "scale=1920:1080"])
             .rawvideo()
             .spawn()
