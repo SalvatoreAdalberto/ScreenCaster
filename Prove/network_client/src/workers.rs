@@ -35,12 +35,13 @@ pub struct WorkersManger{
     receiving_turn: Mutex<usize>,
     internal_txs_frame: Vec<CrossbeamSender<OutputVideoFrame>>,
     internal_rx_image: CrossbeamReceiver<ColorImage>,
+    receive_frame: Arc<Mutex<Receiver<OutputVideoFrame>>>,
     send_image: Sender<ColorImage>,
     workers: Vec<Worker>,
 }
 
 impl WorkersManger{
-    pub fn new(n_workers: usize, send_image: Sender<ColorImage>) -> Self{
+    pub fn new(n_workers: usize, receive_frame: Arc<Mutex<Receiver<OutputVideoFrame>>>, send_image: Sender<ColorImage>) -> Self{
         let cv = Arc::new(Condvar::new());
         let sending_turn = Arc::new(Mutex::new(0));
         let receiving_turn = Mutex::new(0);
@@ -67,17 +68,21 @@ impl WorkersManger{
             receiving_turn,
             internal_rx_image,
             internal_txs_frame,
+            receive_frame,
             send_image,
             workers
         }
     }
 
-    pub fn execute(&self, frame: OutputVideoFrame){
-        let mut receiving_turn_guard = self.receiving_turn.lock().unwrap();
-        let i = *receiving_turn_guard;
-        *receiving_turn_guard = (*receiving_turn_guard + 1) % self.n_workers;
-        drop(receiving_turn_guard);
-        self.internal_txs_frame[i].send(frame).unwrap();
+    pub fn execute(&self){
+        let receiver_frame = self.receive_frame.lock().unwrap();
+        while let Ok(frame) = receiver_frame.recv(){
+            let mut receiving_turn_guard = self.receiving_turn.lock().unwrap();
+            let i = *receiving_turn_guard;
+            *receiving_turn_guard = (*receiving_turn_guard + 1) % self.n_workers;
+            drop(receiving_turn_guard);
+            self.internal_txs_frame[i].send(frame).unwrap();
+        }
     }
 
     pub fn activate(&self){

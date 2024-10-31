@@ -27,13 +27,10 @@ fn main() -> std::io::Result<()> {
         "-preset", "ultrafast",       // Preset di compressione 
         "-tune", "zerolatency",       // Tuning per bassa latenza
         "-f", "mpegts",             // Formato di output raw
-        "-omit_video_pes_length", "0", // Lunghezza PES
         "-codec:v", "libx264",      // Codec video
         "-b:v", "1M",                  // Bitrate
         "-crf", "23",                 // Costant Rate Factor
         "-pix_fmt", "yuv420p",       // Formato pixel
-        "-bf", "0",                   // Nessun B-Frames
-        "-vf", "unsharp=3:3:1.0",          // Filtri per migliorare la qualità
         "pipe:1"                    // Output su stdout
     ];
 
@@ -41,17 +38,17 @@ fn main() -> std::io::Result<()> {
     let mut ffmpeg = FfmpegCommand::new().args(&ffmpeg_command).as_inner_mut().stderr(Stdio::piped()).spawn().expect("Failed to start FFmpeg");
 
     //Server Socket Binding
-    let socket = UdpSocket::bind("192.168.0.100:1935").expect("Failed to bind socket");  // Il server si bind sulla porta 1234
+    let socket = UdpSocket::bind("192.168.1.95:1935").expect("Failed to bind socket");  // Il server si bind sulla porta 1234
 
     //Client address (static clients -> clients should be executed first, the number of clients is fixed)
-    let client_addr: SocketAddr = "192.168.0.100:1936".parse().unwrap();    
+    let client_addr: SocketAddr = "192.168.1.95:1936".parse().unwrap();    
     let client_addr1: SocketAddr = "192.168.1.13:1236".parse().unwrap();   
     let clients = vec![client_addr];
 
     let socket_arc = Arc::new(socket);
 
     let mut reader = BufReader::new(ffmpeg.stdout.take().unwrap());
-    let mut buffer: [u8;1024] = [0; 1024];
+    let mut buffer: [u8; 1024] = [0; 1024];
     let mut threads = vec![];
     let mut txs = vec![];
     // Creare un thread per ogni client per gestire la trasmissione dei dati

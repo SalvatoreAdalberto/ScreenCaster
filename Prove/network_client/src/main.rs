@@ -2,12 +2,16 @@
 mod utils_ffmpeg;
 mod workers;
 
+<<<<<<< HEAD
 use std::sync::{Arc};
+=======
+use std::sync::{Arc, Mutex};
+>>>>>>> 5f8f66d0 (added buffer/channel between ffmpeg and workers manager on client side)
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::Duration;
 use eframe::egui;
 use eframe::egui::{ColorImage, TextureHandle, Image};
-use ffmpeg_sidecar::{command::FfmpegCommand};
+use ffmpeg_sidecar::{command::FfmpegCommand, event::FfmpegEvent::OutputFrame, event::OutputVideoFrame};
 use std::thread;
 use crate::utils_ffmpeg::check_ffmpeg;
 
@@ -59,6 +63,7 @@ fn main() {
     // Creare canale per inviare i frame
 
     let (sender_image, receiver_image): (Sender<ColorImage>, Receiver<ColorImage>) = mpsc::channel();
+    let (sender_frame, receiver_frame): (Sender<OutputVideoFrame>, Receiver<OutputVideoFrame>) = mpsc::channel();
 
     
         // Configura ffmpeg-sidecar per ricevere dati tramite UDP
@@ -69,20 +74,22 @@ fn main() {
             .spawn()
             .expect("Impossibile avviare ffmpeg");
 
-    let w_manager = Arc::new(workers::WorkersManger::new(5, sender_image));
+    let w_manager = Arc::new(workers::WorkersManger::new(5, Arc::new(Mutex::new(receiver_frame)), sender_image));
     let w_manager2 = w_manager.clone();
     thread::spawn(move || {
         // Itera sugli eventi di output di ffmpeg
         ffmpeg_command.iter().expect("Errore iterando i frame").for_each(|e| {
             match e {
-                ffmpeg_sidecar::event::FfmpegEvent::OutputFrame(frame) =>  w_manager2.execute(frame),                
+                OutputFrame(frame) => sender_frame.send(frame).unwrap(),                
                 _ => println!("Event: {:?}", e),
             }
             //println!("len: {:?} ", e);
             
         });
     });
-
+    thread::spawn(move || {
+        w_manager2.execute();
+    });
     thread::spawn(move ||{
         w_manager.activate();
     });
