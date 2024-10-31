@@ -2,7 +2,6 @@
 mod utils_ffmpeg;
 mod workers;
 
-use rayon::prelude::*;
 use std::sync::{Arc};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::Duration;
@@ -64,13 +63,13 @@ fn main() {
     
         // Configura ffmpeg-sidecar per ricevere dati tramite UDP
     let mut ffmpeg_command = FfmpegCommand::new()
-            .input("udp:/192.168.1.13:1235")
-            .args(&["-vf", "scale=1920:1080"])
+            .input("udp:/192.168.0.100:1936?overrun_nonfatal=1&fifo_size=50000000")
+            .args(&["-fflags", "nobuffer", "-flags", "low_delay", "-vf", "scale=1920:1080"])
             .rawvideo()
             .spawn()
             .expect("Impossibile avviare ffmpeg");
 
-    let w_manager = Arc::new(workers::WorkersManger::new(3, sender_image));
+    let w_manager = Arc::new(workers::WorkersManger::new(5, sender_image));
     let w_manager2 = w_manager.clone();
     thread::spawn(move || {
         // Itera sugli eventi di output di ffmpeg

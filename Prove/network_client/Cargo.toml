@@ -10,4 +10,5 @@ tokio = { version = "1.40", features = ["full"] }
 eframe = { version = "0.28.1", features = ["default", "wgpu", "__screenshot"] }
 image = { version = "*", features = ["png"] }
 ffmpeg-sidecar = "1.1.0"
-rayon = "*"
+crossbeam-channel = "*"
+crossbeam-utils = "*"
