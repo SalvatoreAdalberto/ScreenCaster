@@ -20,16 +20,16 @@ fn main() -> std::io::Result<()> {
 
     let ffmpeg_command = vec![
         "-f", "avfoundation",               // Formato input per catturare lo schermo
-        "-r", "30",                  // Frame rate
+        "-re",                  // Frame rate
         "-video_size", "1280x720",             // Risoluzione dello schermo
         "-capture_cursor", "1",         // Cattura il cursore
         "-i", "1:",                  // Schermo da catturare
-        "-preset", "ultrafast",       // Preset di compressione 
         "-tune", "zerolatency",       // Tuning per bassa latenza
         "-f", "mpegts",             // Formato di output raw
         "-codec:v", "libx264",      // Codec video
-        "-b:v", "1M",                  // Bitrate
-        "-crf", "23",                 // Costant Rate Factor
+        "-preset", "medium",       // Preset di compressione 
+        // "-b:v", "5M",                  // Bitrate
+        "-crf", "28",                 // Costant Rate Factor
         "-pix_fmt", "yuv420p",       // Formato pixel
         "pipe:1"                    // Output su stdout
     ];
@@ -41,9 +41,9 @@ fn main() -> std::io::Result<()> {
     let socket = UdpSocket::bind("192.168.1.95:1935").expect("Failed to bind socket");  // Il server si bind sulla porta 1234
 
     //Client address (static clients -> clients should be executed first, the number of clients is fixed)
-    let client_addr: SocketAddr = "192.168.1.95:1936".parse().unwrap();    
-    let client_addr1: SocketAddr = "192.168.1.13:1236".parse().unwrap();   
-    let clients = vec![client_addr];
+    let client_addr: SocketAddr = "192.168.1.147:1936".parse().unwrap();    
+    let client_addr1: SocketAddr = "192.168.1.95:1936".parse().unwrap();   
+    let clients = vec![client_addr, client_addr1];
 
     let socket_arc = Arc::new(socket);
 

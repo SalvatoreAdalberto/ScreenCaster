@@ -2,11 +2,7 @@
 mod utils_ffmpeg;
 mod workers;
 
-<<<<<<< HEAD
-use std::sync::{Arc};
-=======
 use std::sync::{Arc, Mutex};
->>>>>>> 5f8f66d0 (added buffer/channel between ffmpeg and workers manager on client side)
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::Duration;
 use eframe::egui;
@@ -68,8 +64,8 @@ fn main() {
     
         // Configura ffmpeg-sidecar per ricevere dati tramite UDP
     let mut ffmpeg_command = FfmpegCommand::new()
-            .input("udp:/192.168.0.100:1936?overrun_nonfatal=1&fifo_size=50000000")
-            .args(&["-fflags", "nobuffer", "-flags", "low_delay", "-vf", "scale=1920:1080"])
+            .input("udp:/192.168.1.95:1936?overrun_nonfatal=1&fifo_size=50000000")
+            .args(&["-fflags", "nobuffer", "-flags", "low_delay", "-vf", "scale=1280:720"])
             .rawvideo()
             .spawn()
             .expect("Impossibile avviare ffmpeg");
