@@ -166,7 +166,8 @@ fn build_root_widget() -> impl Widget<AppData> {
     let row = Flex::row()
         .with_child(button)
         .with_child(button2)
-        .with_child(button3);
+        .with_child(button3)
+        .background(Color::rgba8(0x00, 0x00, 0x00, 0xff));
 
     Flex::column()
         //.with_child(DrawingOverlay::new())
