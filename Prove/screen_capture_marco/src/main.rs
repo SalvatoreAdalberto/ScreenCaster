@@ -7,6 +7,7 @@ use crate::hotkeys::AppState;
 mod screen_capture;
 mod gui;
 mod hotkeys;
+mod annotation_tool;
 
 fn main() {
     screen_capture::check_ffmpeg().expect("Failed to check FFmpeg");

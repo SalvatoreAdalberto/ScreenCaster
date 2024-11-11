@@ -10,3 +10,9 @@ iced = { version = "0.10.0", features = ["wgpu"] }
 winit = "0.30.5"
 winapi = "0.3.9"
 global-hotkey = "0.6.2"
+druid = { version = "0.8.3", features = ["svg"] }
+eframe = { version = "0.28.1", features = ["default", "wgpu", "__screenshot"] }
+
+[[bin]]
+name = "annotation_tool"
+path = "src/annotation_tool.rs"
