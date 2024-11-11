@@ -107,9 +107,11 @@ pub fn main() -> anyhow::Result<()> {
         .title(LocalizedString::new("Disegna figure"))
         .set_always_on_top(true)
         .transparent(true)
+        .show_titlebar(false)
         .window_size(Size::new(width, height))
         .set_position((0f64, 0.0f64))
         .resizable(false);
+
 
     let initial_data = AppData {
         overlay_state: OverlayState::Idle,

@@ -2,9 +2,11 @@ use iced::widget::{text_input, Button, Column, Container, Row, Text, TextInput};
 use iced::{Alignment, Element, Length, Application, Command, Settings, Theme};
 use crate::screen_capture::{ScreenCapture};
 use std::sync::{Arc, Mutex};
+use egui::Pos2;
 use global_hotkey::GlobalHotKeyManager;
 use global_hotkey::hotkey::{HotKey, Modifiers};
 use crate::hotkeys::{AppState, parse_key_code};
+use std::process::{Child, Command as Command2};
 
 // Definiamo i messaggi dell'applicazione
 #[derive(Debug, Clone)]
@@ -20,6 +22,7 @@ pub enum Message {
     StopRecordHotkeyChanged(String),
     GoToChangeHotKeys,
     SaveHotKeys,
+    ToggleAnnotationMode,
 }
 
 // Stati possibili dell'applicazione
@@ -45,6 +48,7 @@ pub struct ScreenCaster {
     stop_id: Arc<Mutex<u32>>,
     start_shortcut: String,        // Shortcut per avviare la registrazione
     stop_shortcut: String,         // Shortcut per fermare la registrazione
+    handle_annotation_tool: Option<Child>,
 }
 
 impl Application for ScreenCaster {
@@ -68,6 +72,7 @@ impl Application for ScreenCaster {
                 stop_id: flags.3,
                 start_shortcut: "H".to_string(),
                 stop_shortcut: "F".to_string(),
+                handle_annotation_tool: None,
             },
             Command::none(),
         )
@@ -149,6 +154,16 @@ impl Application for ScreenCaster {
             Message::StopRecordHotkeyChanged(key) => {
                 self.stop_shortcut = key
             }
+            Message::ToggleAnnotationMode => {
+                if self.handle_annotation_tool.is_some() {
+                    self.handle_annotation_tool.as_mut().unwrap().kill().unwrap();
+                    self.handle_annotation_tool = None;
+                } else {
+                    self.handle_annotation_tool = Some(Command2::new("./target/debug/annotation_tool")
+                        .spawn()
+                        .expect("Non è stato possibile avviare la finestra 2"));
+                }
+            }
         }
 
         Command::none()
@@ -228,6 +243,11 @@ impl ScreenCaster {
                         Button::new(Text::new("Ferma Screen Casting"))
                             .padding(10)
                             .on_press(Message::StopCasting),
+                    )
+                    .push(
+                        Button::new(Text::new("Attiva modalità annotazione"))
+                            .padding(10)
+                            .on_press(Message::ToggleAnnotationMode),
                     ),
             )
             .push(
