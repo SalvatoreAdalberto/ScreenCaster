@@ -9,6 +9,7 @@ use eframe::App;
 
 #[derive(PartialEq, Debug, Clone, Data)]
 pub enum OverlayState {
+    View,
     Drawing,
     Idle,
 }
@@ -68,7 +69,7 @@ impl Widget<AppData> for DrawingOverlay {
         data: &AppData,
         _env: &Env,
     ) {
-        if data.overlay_state == OverlayState::Drawing {
+        if _old_data.overlay_state != data.overlay_state {
             ctx.request_paint();
         }
     }
@@ -84,17 +85,33 @@ impl Widget<AppData> for DrawingOverlay {
     }
 
     fn paint(&mut self, ctx: &mut druid::PaintCtx, data: &AppData, _env: &Env) {
-        // Riempie l'intera area della finestra con il colore di sfondo
-        let background_rect = ctx.size().to_rect();
-        ctx.fill(background_rect, &Color::rgba8(0xff, 0xff, 0xff, 0x4)); // Cambia il colore di sfondo qui
 
-        // Disegna solo il bordo del rettangolo selezionato
-        if let (Some(start), Some(end)) = (data.start_point, data.end_point) {
-            let rect = Rect::from_points(start, end);
-            let border_color = Color::rgb8(0, 0, 255); // Colore del bordo (blu)
-            let border_width = 2.0; // Spessore del bordo
+        if data.overlay_state == OverlayState::View {
+            println!("Rendering view");
+            let background_rect = ctx.size().to_rect();
+            ctx.fill(background_rect, &Color::rgba8(0xff, 0xff, 0xff, 0)); // Cambia il colore di sfondo qui
+            // Disegna solo il bordo del rettangolo selezionato
+            if let (Some(start), Some(end)) = (data.start_point, data.end_point) {
+                let rect = Rect::from_points(start, end);
+                let border_color = Color::rgb8(0, 0, 255); // Colore del bordo (blu)
+                let border_width = 2.0; // Spessore del bordo
 
-            ctx.stroke(rect, &border_color, border_width);
+                ctx.stroke(rect, &border_color, border_width);
+            }
+        }
+        else {
+            // Riempie l'intera area della finestra con il colore di sfondo
+            let background_rect = ctx.size().to_rect();
+            ctx.fill(background_rect, &Color::rgba8(0xff, 0xff, 0xff, 0x4)); // Cambia il colore di sfondo qui
+
+            // Disegna solo il bordo del rettangolo selezionato
+            if let (Some(start), Some(end)) = (data.start_point, data.end_point) {
+                let rect = Rect::from_points(start, end);
+                let border_color = Color::rgb8(0, 0, 255); // Colore del bordo (blu)
+                let border_width = 2.0; // Spessore del bordo
+
+                ctx.stroke(rect, &border_color, border_width);
+            }
         }
     }
 }
@@ -112,9 +129,8 @@ pub fn main() -> anyhow::Result<()> {
         .set_position((0f64, 0.0f64))
         .resizable(false);
 
-
     let initial_data = AppData {
-        overlay_state: OverlayState::Idle,
+        overlay_state: OverlayState::View,
         start_point: None,
         end_point: None,
     };
@@ -135,9 +151,26 @@ fn build_root_widget() -> impl Widget<AppData> {
         Application::global().quit(); // Termina l'applicazione quando si preme il bottone
     });
 
+    let button2 = Button::new("Disegna").on_click(|_ctx, _data: &mut AppData, _env| {
+        _data.overlay_state = OverlayState::Drawing;
+        _ctx.request_paint();
+        println!("Disegna");
+    });
+
+    let button3 = Button::new("Visualizza").on_click(|_ctx, _data: &mut AppData, _env| {
+        _data.overlay_state = OverlayState::View;
+        _ctx.request_paint();
+        println!("{:?}", _data.overlay_state);
+    });
+
+    let row = Flex::row()
+        .with_child(button)
+        .with_child(button2)
+        .with_child(button3);
+
     Flex::column()
         //.with_child(DrawingOverlay::new())
-        .with_child(button)
+        .with_child(row)
         .with_flex_child(DrawingOverlay::new(), 10.0)
 }
 
