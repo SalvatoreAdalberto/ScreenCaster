@@ -56,6 +56,7 @@ pub struct AppData {
     shapes: Vec<Shapes>,
     selected_shape: ShapeType, // Currently selected shape type
     selected_color: Color, // Currently selected color
+    cleaning: bool,
 }
 
 pub struct DrawingOverlay;
@@ -68,6 +69,9 @@ impl DrawingOverlay {
 
 impl Widget<AppData> for DrawingOverlay {
     fn event(&mut self, ctx: &mut EventCtx, event: &Event, data: &mut AppData, _env: &Env) {
+        if data.cleaning {
+            data.cleaning = false;
+        }
         match event {
             Event::MouseDown(mouse) => {
                 // Start tracking the rectangle
@@ -154,7 +158,7 @@ impl Widget<AppData> for DrawingOverlay {
         data: &AppData,
         _env: &Env,
     ) {
-        if data.overlay_state != _old_data.overlay_state {
+        if data.overlay_state != _old_data.overlay_state || data.cleaning {
             ctx.request_paint();
         }
     }
@@ -266,6 +270,7 @@ pub fn main() -> anyhow::Result<()> {
         shapes: Vec::new(),
         selected_shape: ShapeType::Rectangle,
         selected_color: Color::BLACK,
+        cleaning: false,
     };
 
     AppLauncher::with_window(main_window)
@@ -292,6 +297,7 @@ fn build_root_widget() -> impl Widget<AppData> {
 
     let clear_button = Button::new("Clear").on_click(|_ctx, _data: &mut AppData, _env| {
         _data.shapes.clear();
+        _data.cleaning = true;
         _ctx.request_paint();
     });
 
@@ -334,9 +340,10 @@ fn build_root_widget() -> impl Widget<AppData> {
 
 pub fn compute_window_size() -> anyhow::Result<(f64, f64, f64, f64)> {
     let screens = druid::Screen::get_monitors();
-    let width = screens.to_vec()[0].virtual_work_rect().width();
-    let height = screens.to_vec()[0].virtual_work_rect().height();
-    let top_x = screens.to_vec()[0].virtual_work_rect().x0;
+    println!("{:?}", screens);
+    let width = screens.to_vec()[0].virtual_rect().width();
+    let height = screens.to_vec()[0].virtual_rect().height();
+    let top_x = screens.to_vec()[0].virtual_rect().x0;
     let top_y = screens.to_vec()[0].virtual_work_rect().y0;
     Ok((width, height, top_x, top_y))
 }
