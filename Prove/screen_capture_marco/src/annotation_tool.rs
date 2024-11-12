@@ -5,6 +5,7 @@ use druid::{AppLauncher, LocalizedString, WidgetExt, WindowDesc};
 use druid::piet::{Color, RenderContext};
 use druid::widget::{Button, Flex, Widget, RadioGroup, LensWrap};
 use druid::{Data, Env, EventCtx, Point, Rect, Lens, Event, LifeCycle, LifeCycleCtx, UpdateCtx, LayoutCtx, BoxConstraints, Size, Application};
+use druid::kurbo::{Line};
 
 #[derive(PartialEq, Debug, Clone, Data)]
 pub enum OverlayState {
@@ -17,12 +18,16 @@ pub enum OverlayState {
 pub enum ShapeType {
     Rectangle,
     Circle,
+    Line,
+    Highlight,
 }
 
 #[derive(Clone, Data)]
 pub enum Shapes {
     Rectangle(Rectangle),
     Circle(Circle),
+    Line(Rectangle),
+    Highlight(Rectangle),
 }
 
 #[derive(Clone, Debug, Data)]
@@ -98,6 +103,24 @@ impl Widget<AppData> for DrawingOverlay {
                             };
                             data.shapes.push(Shapes::Circle(circle));
                         }
+                        ShapeType::Line => {
+                            let rect = Rectangle {
+                                start_x: start.x,
+                                start_y: start.y,
+                                end_x: end.x,
+                                end_y: end.y,
+                            };
+                            data.shapes.push(Shapes::Line(rect));
+                        }
+                        ShapeType::Highlight => {
+                            let rect = Rectangle {
+                                start_x: start.x,
+                                start_y: start.y,
+                                end_x: end.x,
+                                end_y: end.y,
+                            };
+                            data.shapes.push(Shapes::Highlight(rect));
+                        }
                     }
                 }
                 data.overlay_state = OverlayState::Idle;
@@ -164,10 +187,24 @@ impl Widget<AppData> for DrawingOverlay {
                 Shapes::Circle(circle) => {
                     let center = Point::new(circle.center_x, circle.center_y);
                     let radius = circle.radius;
-                    let circle_rect = Rect::from_center_size(center, (radius * 2.0, radius * 2.0));
+                    let c = druid::kurbo::Circle::new(center, radius);
                     let border_color = Color::BLACK;
                     let border_width = 2.0;
-                    ctx.stroke(circle_rect, &border_color, border_width);
+                    ctx.stroke(c, &border_color, border_width);
+                }
+                Shapes::Line(rect) => {
+                    let start = Point::new(rect.start_x, rect.start_y);
+                    let end = Point::new(rect.end_x, rect.end_y);
+                    let line = Line::new(start, end);
+                    let border_color = Color::BLACK;
+                    let border_width = 2.0;
+                    ctx.stroke(line, &border_color, border_width);
+                }
+                Shapes::Highlight(rect) => {
+                    let start = Point::new(rect.start_x, rect.start_y);
+                    let end = Point::new(rect.end_x, rect.end_y);
+                    let rect = Rect::from_points(start, end);
+                    ctx.fill(rect, &Color::rgba8(0xff, 0xff, 0x00, 0x5f));
                 }
             }
         }
@@ -185,9 +222,18 @@ impl Widget<AppData> for DrawingOverlay {
                 ShapeType::Circle => {
                     let dx = end.x - start.x;
                     let dy = end.y - start.y;
+                    let center = Point::new(start.x, start.y);
                     let radius = (dx.powi(2) + dy.powi(2)).sqrt();
-                    let circle_rect = Rect::from_center_size(start, (radius * 2.0, radius * 2.0));
-                    ctx.stroke(circle_rect, &outline_color, border_width);
+                    let circle = druid::kurbo::Circle::new(center, radius);
+                    ctx.stroke(circle, &outline_color, border_width);
+                }
+                ShapeType::Line => {
+                    let line = Line::new(start, end);
+                    ctx.stroke(line, &outline_color, border_width);
+                }
+                ShapeType::Highlight => {
+                    let rect = Rect::from_points(start, end);
+                    ctx.fill(rect, &Color::rgba8(0xff, 0xff, 0x00, 0x5f));
                 }
             }
         }
@@ -246,6 +292,8 @@ fn build_root_widget() -> impl Widget<AppData> {
         RadioGroup::column(vec![
             ("Rectangle", ShapeType::Rectangle),
             ("Circle", ShapeType::Circle),
+            ("Line", ShapeType::Line),
+            ("Highlight", ShapeType::Highlight),
         ]),
         AppData::selected_shape, // Lens for focusing on `selected_shape`
     );
