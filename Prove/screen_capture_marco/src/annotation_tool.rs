@@ -36,6 +36,7 @@ pub struct Rectangle {
     start_y: f64,
     end_x: f64,
     end_y: f64,
+    color: Color,
 }
 
 #[derive(Clone, Debug, Data)]
@@ -43,6 +44,7 @@ pub struct Circle {
     center_x: f64,
     center_y: f64,
     radius: f64,
+    color: Color,
 }
 
 #[derive(Clone, Data, Lens)]
@@ -53,6 +55,7 @@ pub struct AppData {
     #[data(ignore)]
     shapes: Vec<Shapes>,
     selected_shape: ShapeType, // Currently selected shape type
+    selected_color: Color, // Currently selected color
 }
 
 pub struct DrawingOverlay;
@@ -89,6 +92,7 @@ impl Widget<AppData> for DrawingOverlay {
                                 start_y: start.y,
                                 end_x: end.x,
                                 end_y: end.y,
+                                color: data.selected_color,
                             };
                             data.shapes.push(Shapes::Rectangle(rect));
                         }
@@ -100,6 +104,7 @@ impl Widget<AppData> for DrawingOverlay {
                                 center_x: start.x,
                                 center_y: start.y,
                                 radius,
+                                color: data.selected_color,
                             };
                             data.shapes.push(Shapes::Circle(circle));
                         }
@@ -109,6 +114,7 @@ impl Widget<AppData> for DrawingOverlay {
                                 start_y: start.y,
                                 end_x: end.x,
                                 end_y: end.y,
+                                color: data.selected_color,
                             };
                             data.shapes.push(Shapes::Line(rect));
                         }
@@ -118,6 +124,7 @@ impl Widget<AppData> for DrawingOverlay {
                                 start_y: start.y,
                                 end_x: end.x,
                                 end_y: end.y,
+                                color: data.selected_color,
                             };
                             data.shapes.push(Shapes::Highlight(rect));
                         }
@@ -179,8 +186,8 @@ impl Widget<AppData> for DrawingOverlay {
                 Shapes::Rectangle(rect) => {
                     let start = Point::new(rect.start_x, rect.start_y);
                     let end = Point::new(rect.end_x, rect.end_y);
+                    let border_color = rect.color;
                     let rect = Rect::from_points(start, end);
-                    let border_color = Color::BLACK;
                     let border_width = 2.0;
                     ctx.stroke(rect, &border_color, border_width);
                 }
@@ -188,7 +195,7 @@ impl Widget<AppData> for DrawingOverlay {
                     let center = Point::new(circle.center_x, circle.center_y);
                     let radius = circle.radius;
                     let c = druid::kurbo::Circle::new(center, radius);
-                    let border_color = Color::BLACK;
+                    let border_color = circle.color;
                     let border_width = 2.0;
                     ctx.stroke(c, &border_color, border_width);
                 }
@@ -196,7 +203,7 @@ impl Widget<AppData> for DrawingOverlay {
                     let start = Point::new(rect.start_x, rect.start_y);
                     let end = Point::new(rect.end_x, rect.end_y);
                     let line = Line::new(start, end);
-                    let border_color = Color::BLACK;
+                    let border_color = rect.color;
                     let border_width = 2.0;
                     ctx.stroke(line, &border_color, border_width);
                 }
@@ -211,13 +218,13 @@ impl Widget<AppData> for DrawingOverlay {
 
         // Draw current selection outline
         if let (Some(start), Some(end)) = (data.start_point, data.end_point) {
-            let outline_color = Color::BLACK;
+            let outline_color = &data.selected_color;
             let border_width = 2.0;
 
             match data.selected_shape {
                 ShapeType::Rectangle => {
                     let rect = Rect::from_points(start, end);
-                    ctx.stroke(rect, &outline_color, border_width);
+                    ctx.stroke(rect, outline_color, border_width);
                 }
                 ShapeType::Circle => {
                     let dx = end.x - start.x;
@@ -225,11 +232,11 @@ impl Widget<AppData> for DrawingOverlay {
                     let center = Point::new(start.x, start.y);
                     let radius = (dx.powi(2) + dy.powi(2)).sqrt();
                     let circle = druid::kurbo::Circle::new(center, radius);
-                    ctx.stroke(circle, &outline_color, border_width);
+                    ctx.stroke(circle, outline_color, border_width);
                 }
                 ShapeType::Line => {
                     let line = Line::new(start, end);
-                    ctx.stroke(line, &outline_color, border_width);
+                    ctx.stroke(line, outline_color, border_width);
                 }
                 ShapeType::Highlight => {
                     let rect = Rect::from_points(start, end);
@@ -258,6 +265,7 @@ pub fn main() -> anyhow::Result<()> {
         end_point: None,
         shapes: Vec::new(),
         selected_shape: ShapeType::Rectangle,
+        selected_color: Color::BLACK,
     };
 
     AppLauncher::with_window(main_window)
@@ -298,12 +306,25 @@ fn build_root_widget() -> impl Widget<AppData> {
         AppData::selected_shape, // Lens for focusing on `selected_shape`
     );
 
+    let color_selector = LensWrap::new(
+        RadioGroup::column(vec![
+            ("Black", Color::BLACK),
+            ("Red", Color::RED),
+            ("Green", Color::GREEN),
+            ("Blue", Color::BLUE),
+            ("Yellow", Color::YELLOW),
+        ]),
+        AppData::selected_color, // Lens for focusing on `selected_shape`
+    );
+
     let controls = Flex::row()
         .with_child(quit_button)
         .with_child(draw_button)
         .with_child(view_button)
         .with_child(clear_button)
         .with_child(shape_selector)
+        .with_child(color_selector)
+        .must_fill_main_axis(true)
         .background(Color::rgba8(0x00, 0x00, 0x00, 0xff));
 
     Flex::column()
