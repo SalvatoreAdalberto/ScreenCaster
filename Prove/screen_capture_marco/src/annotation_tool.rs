@@ -22,7 +22,7 @@ pub enum ShapeType {
     Highlight,
 }
 
-#[derive(Clone, Data)]
+#[derive(Clone, Data, PartialEq)]
 pub enum Shapes {
     Rectangle(Rectangle),
     Circle(Circle),
@@ -30,7 +30,7 @@ pub enum Shapes {
     Highlight(Rectangle),
 }
 
-#[derive(Clone, Debug, Data)]
+#[derive(Clone, Debug, Data, PartialEq)]
 pub struct Rectangle {
     start_x: f64,
     start_y: f64,
@@ -39,7 +39,7 @@ pub struct Rectangle {
     color: Color,
 }
 
-#[derive(Clone, Debug, Data)]
+#[derive(Clone, Debug, Data, PartialEq)]
 pub struct Circle {
     center_x: f64,
     center_y: f64,
@@ -52,11 +52,10 @@ pub struct AppData {
     overlay_state: OverlayState,
     start_point: Option<Point>,
     end_point: Option<Point>,
-    #[data(ignore)]
+    #[data(same_fn = "PartialEq::eq")]
     shapes: Vec<Shapes>,
     selected_shape: ShapeType, // Currently selected shape type
     selected_color: Color, // Currently selected color
-    cleaning: bool,
 }
 
 pub struct DrawingOverlay;
@@ -69,9 +68,6 @@ impl DrawingOverlay {
 
 impl Widget<AppData> for DrawingOverlay {
     fn event(&mut self, ctx: &mut EventCtx, event: &Event, data: &mut AppData, _env: &Env) {
-        if data.cleaning {
-            data.cleaning = false;
-        }
         match event {
             Event::MouseDown(mouse) => {
                 // Start tracking the rectangle
@@ -158,7 +154,10 @@ impl Widget<AppData> for DrawingOverlay {
         data: &AppData,
         _env: &Env,
     ) {
-        if data.overlay_state != _old_data.overlay_state || data.cleaning {
+        if data.overlay_state != _old_data.overlay_state {
+            ctx.request_paint();
+        }
+        if data.shapes.len() != _old_data.shapes.len() {
             ctx.request_paint();
         }
     }
@@ -270,7 +269,6 @@ pub fn main() -> anyhow::Result<()> {
         shapes: Vec::new(),
         selected_shape: ShapeType::Rectangle,
         selected_color: Color::BLACK,
-        cleaning: false,
     };
 
     AppLauncher::with_window(main_window)
@@ -297,7 +295,11 @@ fn build_root_widget() -> impl Widget<AppData> {
 
     let clear_button = Button::new("Clear").on_click(|_ctx, _data: &mut AppData, _env| {
         _data.shapes.clear();
-        _data.cleaning = true;
+        _ctx.request_paint();
+    });
+
+    let undo_button = Button::new("Undo").on_click(|_ctx, _data: &mut AppData, _env| {
+        _data.shapes.pop();
         _ctx.request_paint();
     });
 
@@ -328,6 +330,7 @@ fn build_root_widget() -> impl Widget<AppData> {
         .with_child(draw_button)
         .with_child(view_button)
         .with_child(clear_button)
+        .with_child(undo_button)
         .with_child(shape_selector)
         .with_child(color_selector)
         .must_fill_main_axis(true)
