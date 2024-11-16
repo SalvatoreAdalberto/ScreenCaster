@@ -38,12 +38,12 @@ fn main() -> std::io::Result<()> {
     let mut ffmpeg = FfmpegCommand::new().args(&ffmpeg_command).as_inner_mut().stderr(Stdio::piped()).spawn().expect("Failed to start FFmpeg");
 
     //Server Socket Binding
-    let socket = UdpSocket::bind("192.168.1.95:1935").expect("Failed to bind socket");  // Il server si bind sulla porta 1234
+    let socket = UdpSocket::bind("192.168.1.24:1935").expect("Failed to bind socket");  // Il server si bind sulla porta 1234
 
     //Client address (static clients -> clients should be executed first, the number of clients is fixed)
-    let client_addr: SocketAddr = "192.168.1.147:1936".parse().unwrap();    
+    let client_addr: SocketAddr = "192.168.1.24:8080".parse().unwrap();    
     let client_addr1: SocketAddr = "192.168.1.95:1936".parse().unwrap();   
-    let clients = vec![client_addr, client_addr1];
+    let clients = vec![client_addr];
 
     let socket_arc = Arc::new(socket);
 

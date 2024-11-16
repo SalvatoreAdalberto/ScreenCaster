@@ -12,3 +12,5 @@ image = { version = "*", features = ["png"] }
 ffmpeg-sidecar = "1.1.0"
 crossbeam-channel = "*"
 crossbeam-utils = "*"
+rand = "0.8"
+local-ip-address = "*"
