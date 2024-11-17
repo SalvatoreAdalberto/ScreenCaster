@@ -21,6 +21,7 @@ use std::io::{Read, Write, BufReader};
 use rand::Rng;
 use std::time::Duration;
 
+const BUFFER_SIZE: usize = 1024;
 struct MyApp {
     texture: Option<TextureHandle>,
     frames: Receiver<ColorImage>, // Condividi i frames tra thread
@@ -62,6 +63,10 @@ fn main() {
     //Check ffmpeg
     check_ffmpeg().expect("Errore nel controllo di FFmpeg");
 
+    //Source address
+    let destination_ip = "127.0.0.1"; //defined manually by the user
+    let target_address = format!("{destination_ip}:8080");
+
     //Check and get local ip address
     let ip_address: String;
     match local_ip() {
@@ -75,11 +80,31 @@ fn main() {
     //Define socket
     let socket = UdpSocket::bind(format!("{ip_address}:8080")).expect("Failed to bind socket");  // Il client bind sulla porta 8080
 
+    let mut buffer = [0; BUFFER_SIZE];
+    let message = "START".as_bytes();
+    socket.send_to(&message, target_address).expect("Failed to send START message");
+    socket.set_read_timeout(Some(Duration::from_secs(10))).expect("Failed to set read timeout");
+
+    loop{
+        match socket.recv(&mut buffer) {
+            Ok(number_of_bytes) => {
+                let data = &buffer[..number_of_bytes];
+                if data == "OK".as_bytes() {
+                    buffer = [0; BUFFER_SIZE];
+                    break;
+                }
+            }
+            Err(err) => {
+                eprintln!("Failed to receive data: {}", err);
+            }
+        }
+    }
+
     //Define playback channels
     let (sender_image, receiver_image): (Sender<ColorImage>, Receiver<ColorImage>) = mpsc::channel();
     let (sender_frame, receiver_frame): (Sender<OutputVideoFrame>, Receiver<OutputVideoFrame>) = mpsc::channel();
 
-    //Define channels to manage socket
+    //Define channels and buffer to manage socket
     let (tx_playback, rx_playback): (Sender<Vec<u8>>, Receiver<Vec<u8>>) = mpsc::channel();
     let (tx_record, rx_record): (Sender<Vec<u8>>, Receiver<Vec<u8>>) = mpsc::channel(); //rx_record to be stored in the appstate
 
@@ -89,14 +114,14 @@ fn main() {
     let is_recording1 = is_recording.clone();
     let is_recording2 = is_recording.clone();
     let cv_recording1 = cv_recording.clone();
+
+    
     // SOCKET MANAGER
     thread::spawn(move || {
-        let mut buf = [0; 1024];
         loop {
-            // Await the asynchronous recv_from call
-            match socket.recv_from(&mut buf) {
-                Ok((number_of_bytes, _)) => {
-                    let data = &buf[..number_of_bytes];
+            match socket.recv(&mut buffer) {
+                Ok(number_of_bytes) => {
+                    let data = &buffer[..number_of_bytes];
                     if let Err(err) = tx_playback.send(data.to_vec()) {
                         eprintln!("Failed to send data to playback: {}", err);
                     }
@@ -112,6 +137,7 @@ fn main() {
             }
         }
     });
+
     // PLAYBACK
     thread::spawn(move || {
         // Configura ffmpeg-sidecar per ricevere dati tramite UDP
@@ -158,8 +184,8 @@ fn main() {
 
     // RECORD
     thread::spawn(move || {
-        while !*is_recording.lock().unwrap(){
-            let mut recording_guard = is_recording.lock().unwrap();
+        let mut recording_guard = is_recording.lock().unwrap();
+        while !*recording_guard{
             recording_guard = cv_recording.wait(recording_guard).unwrap();
         }
         // Configura ffmpeg-sidecar per registrare

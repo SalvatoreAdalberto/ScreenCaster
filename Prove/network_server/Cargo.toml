@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 tokio = { version = "1.40", features = ["full"] }
 ffmpeg-sidecar = "1.1.0"
+local-ip-address = "*"

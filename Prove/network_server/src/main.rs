@@ -4,6 +4,8 @@ use std::sync::mpsc::channel;
 use std::thread;
 use std::sync::{Arc, Mutex};
 
+use local_ip_address::local_ip;
+
 //use tokio::net::UdpSocket;
 // use tokio::{task, sync::broadcast};
 // use std::sync::Arc;
@@ -14,10 +16,32 @@ use std::io::{Read, Write, BufReader};
 mod utils_ffmpeg;
 use utils_ffmpeg::check_ffmpeg;
 
+fn handle_client(socket: std::sync::Arc<UdpSocket>, client_address: String) {}
+
+const BUFFER_SIZE: usize = 1024;
+struct Client{
+    ip: String,
+    port: u16,
+    tx: std::sync::mpsc::Sender<Vec<u8>>,
+}
+
 //#[tokio::main]
 fn main() -> std::io::Result<()> {
     check_ffmpeg().expect("Failed to check FFmpeg");
+    // Get local ip address
+    let ip_address: String;
+    match local_ip() {
+        Ok(ip) => ip_address = ip.to_string(),
+        Error=> {
+            println!("Impossibile ottenere l'indirizzo IP");
+            panic!()
+        },
+    };
+    //Define socket
+    let socket = Arc::new(UdpSocket::bind(format!("{ip_address}:8080")).expect("Failed to bind socket"));  // Il client bind sulla porta 8080
+    let listener_socket = socket.clone();
 
+    // START RECORDING
     let ffmpeg_command = vec![
         "-f", "avfoundation",               // Formato input per catturare lo schermo
         "-re",                  // Frame rate
@@ -36,35 +60,58 @@ fn main() -> std::io::Result<()> {
 
     // Avvia il comando FFmpeg con ffmpeg-sidecar
     let mut ffmpeg = FfmpegCommand::new().args(&ffmpeg_command).as_inner_mut().stderr(Stdio::piped()).spawn().expect("Failed to start FFmpeg");
-
-    //Server Socket Binding
-    let socket = UdpSocket::bind("192.168.1.24:1935").expect("Failed to bind socket");  // Il server si bind sulla porta 1234
-
-    //Client address (static clients -> clients should be executed first, the number of clients is fixed)
-    let client_addr: SocketAddr = "192.168.1.24:8080".parse().unwrap();    
-    let client_addr1: SocketAddr = "192.168.1.95:1936".parse().unwrap();   
-    let clients = vec![client_addr];
-
-    let socket_arc = Arc::new(socket);
-
-    let mut reader = BufReader::new(ffmpeg.stdout.take().unwrap());
-    let mut buffer: [u8; 1024] = [0; 1024];
-    let mut threads = vec![];
-    let mut txs = vec![];
-    // Creare un thread per ogni client per gestire la trasmissione dei dati
-    for client in clients{
-        let (tx, rx) = channel::<Vec<u8>>();
-        let local_socket = Arc::clone(&socket_arc);
-        txs.push(tx);
-        let handle = thread::spawn(move || {
-            loop {
-                let data = rx.recv().unwrap();
-                local_socket.send_to(&data, client).unwrap();
-            }
-        });
-        threads.push(handle);
-    }  
     let mut stderr_record = ffmpeg.stderr.take().unwrap();
+    let mut reader = BufReader::new(ffmpeg.stdout.take().unwrap());
+    let mut buffer: [u8; BUFFER_SIZE] = [0; BUFFER_SIZE];
+
+    //Lista dei client connessi
+    let list_tx_clients: Arc<Mutex<Vec<Client>>> = Arc::new(Mutex::new(Vec::new()));
+    let list_tx_clients_clone = Arc::clone(&list_tx_clients);
+
+    //LISTENER THREAD
+    thread::spawn(move || {
+        let mut buffer = [0; 1024];
+        loop{ 
+            // Ricevi il pacchetto dal client
+            let (bytes_received, client_address) = match listener_socket.recv_from(&mut buffer) {
+                Ok(res) => res,
+                Err(e) => {
+                    eprintln!("Errore durante la ricezione: {}", e);
+                    continue;
+                }
+            };
+
+            let message = String::from_utf8_lossy(&buffer[..bytes_received]);
+            println!("Ricevuto: '{}' da {}", message, client_address);
+
+            // Controlla se il messaggio è "START"
+            if message.trim() == "START" {
+                let target_address = format!("{}:{}", client_address.ip(), client_address.port());
+                // Spawna un thread per gestire l'invio dei dati
+                let send_socket = listener_socket.clone();
+                let (tx, rx) = channel::<Vec<u8>>();
+
+                // Aggiungi il client alla lista
+                list_tx_clients.lock().unwrap().push(Client{
+                    ip: client_address.ip().to_string(),
+                    port: client_address.port(),
+                    tx: tx,
+                });
+
+                //Spawna un thread per inviare i dati al client
+                thread::spawn(move || {
+                    loop {
+                        let data = rx.recv().unwrap();
+                        send_socket.send_to(&data, &target_address).unwrap();
+                    }
+                });
+                
+            }
+        }
+    });
+
+
+    //THREAD ERRORS RECORD
     thread::spawn(move || {
         let mut buffer = [0; 256];
         loop {
@@ -75,18 +122,19 @@ fn main() -> std::io::Result<()> {
             eprintln!("Record Process: {}", String::from_utf8_lossy(&buffer[..n]));
         }
     });
+
+    //SENDING RECORDED DATA
     loop {
             let n = reader.read(&mut buffer).unwrap();
             if n == 0 {
                 break;
             }
-            for tx in &txs {
-                tx.send(buffer[..n].to_vec()).unwrap();
+            let clients = list_tx_clients_clone.lock().unwrap();
+            for client in clients.iter() {
+                client.tx.send(buffer[..n].to_vec()).unwrap();
             }
         }
-    for thread in threads {
-        thread.join().unwrap();
-    }
+    
     
 /**************************************************/
 // SERVER WITH FFMPEG COMMANDS _ NOT WORKING
