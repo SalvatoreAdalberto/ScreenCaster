@@ -17,7 +17,7 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use crossbeam_channel::{bounded, Sender as CrossbeamSender, Receiver as CrossbeamReceiver};
 
 use std::process::{ChildStdin};
-use std::io::{Write, BufReader};
+use std::io::{Read, Write, BufReader};
 use std::io::ErrorKind;
 
 use nix::sys::signal::{self, Signal};
@@ -92,8 +92,8 @@ impl eframe::App for MyApp {
                 if let Some(pid) = self.pid_record {
                         if ui.add_sized([100.0, 40.0], egui::Button::new("Stop Record")).clicked() {
                             let mut recording_guard = self.is_recording.lock().unwrap();
-                            if *recording_guard{
-                                match signal::kill(pid, Signal::SIGTERM){
+                            if *recording_guard && self.pid_record.is_some(){
+                                match signal::kill(pid, Signal::SIGINT){
                                     Ok(_) => {
                                         println!("Record process killed");
                                         self.pid_record = None;
@@ -109,7 +109,7 @@ impl eframe::App for MyApp {
                 }else{
                     if ui.add_sized([100.0, 40.0], egui::Button::new("Start Record")).clicked() {
                         let mut recording_guard = self.is_recording.lock().unwrap();
-                        if !*recording_guard {
+                        if !*recording_guard && self.pid_record.is_none() {
                             // Configura ffmpeg-sidecar per registrare
                             let mut ffmpeg_command_record = FfmpegCommand::new()
                                 .input("pipe:0")
@@ -117,6 +117,18 @@ impl eframe::App for MyApp {
                                 .output("output.mp4")
                                 .spawn()
                                 .expect("Impossibile avviare ffmpeg per registrare");
+                            let mut stderr_record = ffmpeg_command_record.take_stderr().unwrap();
+                            thread::spawn(move || {
+                                let mut buffer = [0; 256];
+                                loop {
+                                    let n = stderr_record.read(&mut buffer).unwrap();
+                                    if n == 0 {
+                                        break;
+                                    }
+                                    eprintln!("Record Process: {}", String::from_utf8_lossy(&buffer[..n]));
+                                }
+                            });
+
                             let stdin_mutex = Mutex::new(ffmpeg_command_record.take_stdin().unwrap());
                             self.pid_record = Some(Pid::from_raw(ffmpeg_command_record.as_inner_mut().id() as i32));
                             let rx_record_clone = self.rx_record.clone();
@@ -124,7 +136,7 @@ impl eframe::App for MyApp {
                                 MyApp::start_record(stdin_mutex, rx_record_clone);
                             });
                             *recording_guard = true;
-                            
+                            drop(recording_guard);
                         }
                     }
                 }    
@@ -140,7 +152,7 @@ fn main() {
     check_ffmpeg().expect("Errore nel controllo di FFmpeg");
 
     //Source address
-    let destination_ip = "192.168.1.24"; //defined manually by the user
+    let destination_ip = "192.168.1.35"; //defined manually by the user
     let target_address = format!("{destination_ip}:8080");
 
     //Check and get local ip address
@@ -210,6 +222,7 @@ fn main() {
                 }
                 Err(err) => {
                     eprintln!("Failed to receive data: {}", err);
+                    break;
                 }
             }
         }
@@ -234,7 +247,7 @@ fn main() {
                 ffmpeg_command.iter().expect("Errore iterando i frame").for_each(|e| {
                     match e {
                         OutputFrame(frame) => sender_frame.send(frame).unwrap(),                
-                        _ => println!("Event: {:?}", e),
+                        _ => {},//println!("Event: {:?}", e),
                     }
                     //println!("len: {:?} ", e);
                     
