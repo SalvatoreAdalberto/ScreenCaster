@@ -2164,6 +2164,7 @@ dependencies = [
  "ffmpeg-sidecar",
  "image",
  "local-ip-address",
+ "nix",
  "rand",
  "tokio",
 ]
@@ -2184,6 +2185,7 @@ dependencies = [
  "cfg-if",
  "libc",
  "memoffset 0.7.1",
+ "pin-utils",
 ]
 
 [[package]]

@@ -51,7 +51,7 @@ fn main() -> std::io::Result<()> {
         "-tune", "zerolatency",       // Tuning per bassa latenza
         "-f", "mpegts",             // Formato di output raw
         "-codec:v", "libx264",      // Codec video
-        "-preset", "medium",       // Preset di compressione 
+        "-preset", "slow",       // Preset di compressione 
         // "-b:v", "5M",                  // Bitrate
         "-crf", "28",                 // Costant Rate Factor
         "-pix_fmt", "yuv420p",       // Formato pixel
@@ -70,7 +70,7 @@ fn main() -> std::io::Result<()> {
 
     //LISTENER THREAD
     thread::spawn(move || {
-        let mut buffer = [0; 1024];
+        let mut buffer = [0; BUFFER_SIZE];
         loop{ 
             // Ricevi il pacchetto dal client
             let (bytes_received, client_address) = match listener_socket.recv_from(&mut buffer) {
@@ -92,36 +92,39 @@ fn main() -> std::io::Result<()> {
                 let (tx, rx) = channel::<Vec<u8>>();
 
                 // Aggiungi il client alla lista
-                list_tx_clients.lock().unwrap().push(Client{
+                let mut list_guard = list_tx_clients.lock().unwrap();
+                list_guard.push(Client{
                     ip: client_address.ip().to_string(),
                     port: client_address.port(),
                     tx: tx,
                 });
 
+                listener_socket.send_to(b"OK", &target_address).unwrap();
+                drop(list_guard);
+                println!("Client connesso: {}", target_address);
                 //Spawna un thread per inviare i dati al client
                 thread::spawn(move || {
                     loop {
                         let data = rx.recv().unwrap();
                         send_socket.send_to(&data, &target_address).unwrap();
                     }
-                });
-                
+                });   
             }
         }
     });
 
 
     //THREAD ERRORS RECORD
-    thread::spawn(move || {
-        let mut buffer = [0; 256];
-        loop {
-            let n = stderr_record.read(&mut buffer).unwrap();
-            if n == 0 {
-                break;
-            }
-            eprintln!("Record Process: {}", String::from_utf8_lossy(&buffer[..n]));
-        }
-    });
+    // thread::spawn(move || {
+    //     let mut buffer = [0; 256];
+    //     loop {
+    //         let n = stderr_record.read(&mut buffer).unwrap();
+    //         if n == 0 {
+    //             break;
+    //         }
+    //         eprintln!("Record Process: {}", String::from_utf8_lossy(&buffer[..n]));
+    //     }
+    // });
 
     //SENDING RECORDED DATA
     loop {

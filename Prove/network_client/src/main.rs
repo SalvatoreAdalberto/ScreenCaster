@@ -14,9 +14,14 @@ use local_ip_address::local_ip;
 use std::thread;
 use std::sync::{Arc, Mutex, Condvar};
 use std::sync::mpsc::{self, Receiver, Sender};
+use crossbeam_channel::{bounded, Sender as CrossbeamSender, Receiver as CrossbeamReceiver};
 
-use std::process::Stdio;
-use std::io::{Read, Write, BufReader};
+use std::process::{ChildStdin};
+use std::io::{Write, BufReader};
+use std::io::ErrorKind;
+
+use nix::sys::signal::{self, Signal};
+use nix::unistd::Pid;
 
 use rand::Rng;
 use std::time::Duration;
@@ -25,13 +30,19 @@ const BUFFER_SIZE: usize = 1024;
 struct MyApp {
     texture: Option<TextureHandle>,
     frames: Receiver<ColorImage>, // Condividi i frames tra thread
+    is_recording: Arc<Mutex<bool>>,
+    rx_record: CrossbeamReceiver<Vec<u8>>,
+    pid_record: Option<Pid>,
 }
 
 impl MyApp {
-    fn new(frames: Receiver<ColorImage>) -> Self {
+    fn new(frames: Receiver<ColorImage>, is_recording: Arc<Mutex<bool>>, rx_record: CrossbeamReceiver<Vec<u8>>) -> Self {
         Self {
             texture: None,
             frames,
+            is_recording,
+            rx_record,
+            pid_record: None,
         }
     }
 
@@ -39,6 +50,30 @@ impl MyApp {
     fn update_image(&mut self, ctx: &egui::Context) {
         if let Ok(image) = self.frames.try_recv() {
             self.texture = Some(ctx.load_texture("updated_image", image, Default::default()));
+        }
+    }
+
+    fn start_record(stdin: Mutex<ChildStdin>, rx_record: CrossbeamReceiver<Vec<u8>>){
+        let mut stdin = stdin.lock().unwrap();
+        loop {
+            match rx_record.recv() {
+                Ok(data) => {
+                    match stdin.write_all(&data){
+                        Ok(_) => {},
+                        Err(e) if e.kind() == ErrorKind::BrokenPipe => {
+                            eprintln!("Closed record process: {}", e);
+                            break;
+                        },
+                        Err(e) => {
+                            eprintln!("Failed to write data to record: {}", e);
+                            break;
+                        }
+                    }
+                }
+                Err(err) => {
+                    eprintln!("Failed to receive data record: {}", err);
+                }
+            }
         }
     }
 }
@@ -53,18 +88,59 @@ impl eframe::App for MyApp {
             } else {
                 ui.label("Nessuna immagine disponibile.");
             }
+            ui.with_layout(egui::Layout::bottom_up(egui::Align::Center), |ui| {
+                if let Some(pid) = self.pid_record {
+                        if ui.add_sized([100.0, 40.0], egui::Button::new("Stop Record")).clicked() {
+                            let mut recording_guard = self.is_recording.lock().unwrap();
+                            if *recording_guard{
+                                match signal::kill(pid, Signal::SIGTERM){
+                                    Ok(_) => {
+                                        println!("Record process killed");
+                                        self.pid_record = None;
+                                        *recording_guard = false;
+                                    },
+                                    Err(e) => {
+                                        eprintln!("Failed to kill record process: {}", e);
+                                    }
+                                }
+                            }
+                            drop(recording_guard);
+                        }
+                }else{
+                    if ui.add_sized([100.0, 40.0], egui::Button::new("Start Record")).clicked() {
+                        let mut recording_guard = self.is_recording.lock().unwrap();
+                        if !*recording_guard {
+                            // Configura ffmpeg-sidecar per registrare
+                            let mut ffmpeg_command_record = FfmpegCommand::new()
+                                .input("pipe:0")
+                                .args(&["-c:v", "copy"])
+                                .output("output.mp4")
+                                .spawn()
+                                .expect("Impossibile avviare ffmpeg per registrare");
+                            let stdin_mutex = Mutex::new(ffmpeg_command_record.take_stdin().unwrap());
+                            self.pid_record = Some(Pid::from_raw(ffmpeg_command_record.as_inner_mut().id() as i32));
+                            let rx_record_clone = self.rx_record.clone();
+                            thread::spawn( || {
+                                MyApp::start_record(stdin_mutex, rx_record_clone);
+                            });
+                            *recording_guard = true;
+                            
+                        }
+                    }
+                }    
+            }); 
         });
-
         ctx.request_repaint_after(Duration::from_secs_f32(1.0 / 30.0));
     }
 }
+
 
 fn main() {
     //Check ffmpeg
     check_ffmpeg().expect("Errore nel controllo di FFmpeg");
 
     //Source address
-    let destination_ip = "127.0.0.1"; //defined manually by the user
+    let destination_ip = "192.168.1.24"; //defined manually by the user
     let target_address = format!("{destination_ip}:8080");
 
     //Check and get local ip address
@@ -78,14 +154,14 @@ fn main() {
     };
 
     //Define socket
-    let socket = UdpSocket::bind(format!("{ip_address}:8080")).expect("Failed to bind socket");  // Il client bind sulla porta 8080
+    let socket = UdpSocket::bind(format!("{ip_address}:3040")).expect("Failed to bind socket");  // Il client bind sulla porta 8080
 
     let mut buffer = [0; BUFFER_SIZE];
     let message = "START".as_bytes();
-    socket.send_to(&message, target_address).expect("Failed to send START message");
     socket.set_read_timeout(Some(Duration::from_secs(10))).expect("Failed to set read timeout");
 
     loop{
+        socket.send_to(&message, &target_address).expect("Failed to send START message");
         match socket.recv(&mut buffer) {
             Ok(number_of_bytes) => {
                 let data = &buffer[..number_of_bytes];
@@ -106,15 +182,11 @@ fn main() {
 
     //Define channels and buffer to manage socket
     let (tx_playback, rx_playback): (Sender<Vec<u8>>, Receiver<Vec<u8>>) = mpsc::channel();
-    let (tx_record, rx_record): (Sender<Vec<u8>>, Receiver<Vec<u8>>) = mpsc::channel(); //rx_record to be stored in the appstate
+    let (tx_record, rx_record): (CrossbeamSender<Vec<u8>>, CrossbeamReceiver<Vec<u8>>) = bounded(10); //rx_record to be stored in the appstate
 
     //Define recording flag
     let is_recording = Arc::new(Mutex::new(false));
-    let cv_recording = Arc::new(Condvar::new());
     let is_recording1 = is_recording.clone();
-    let is_recording2 = is_recording.clone();
-    let cv_recording1 = cv_recording.clone();
-
     
     // SOCKET MANAGER
     thread::spawn(move || {
@@ -125,11 +197,16 @@ fn main() {
                     if let Err(err) = tx_playback.send(data.to_vec()) {
                         eprintln!("Failed to send data to playback: {}", err);
                     }
-                    if *is_recording1.lock().unwrap() {
+                    let is_recording_guard = is_recording1.lock().unwrap();
+                    if *is_recording_guard {
+                        drop(is_recording_guard);
                         if let Err(err) = tx_record.send(data.to_vec()) {
                             eprintln!("Failed to send data to record: {}", err);
                         }
+                    }else{
+                        drop(is_recording_guard);
                     }
+                    
                 }
                 Err(err) => {
                     eprintln!("Failed to receive data: {}", err);
@@ -181,45 +258,10 @@ fn main() {
             }
         }
     });
-
-    // RECORD
-    thread::spawn(move || {
-        let mut recording_guard = is_recording.lock().unwrap();
-        while !*recording_guard{
-            recording_guard = cv_recording.wait(recording_guard).unwrap();
-        }
-        // Configura ffmpeg-sidecar per registrare
-        let mut ffmpeg_command_record = FfmpegCommand::new()
-                .input("pipe:0")
-                .args(&["-c:v", "copy"])
-                .output("output.mp4")
-                .spawn()
-                .expect("Impossibile avviare ffmpeg per registrare");
-        let mut stdin = ffmpeg_command_record.take_stdin().unwrap();
-        loop {
-            match rx_record.recv() {
-                Ok(data) => {
-                    stdin.write_all(&data).unwrap();
-                }
-                Err(err) => {
-                    eprintln!("Failed to receive data record: {}", err);
-                }
-            }
-        }
-    });
-
-    //Thread to simulate pressing the record button
-    thread::spawn(move || {
-        thread::sleep(Duration::from_secs(15));
-        let mut recording_guard = is_recording2.lock().unwrap();
-        *recording_guard = true;
-        cv_recording1.notify_all();
-    });
-
     // Configura la GUI
     let options = eframe::NativeOptions {
         vsync: true,
         ..Default::default()
     };
-    let _ = eframe::run_native("Image Viewer 30 FPS", options, Box::new(|_cc| Ok(Box::new(MyApp::new(receiver_image)))));
+    let _ = eframe::run_native("Image Viewer 30 FPS", options, Box::new(|_cc| Ok(Box::new(MyApp::new(receiver_image, is_recording, rx_record)))));
    }
