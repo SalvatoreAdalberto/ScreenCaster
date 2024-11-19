@@ -3,6 +3,7 @@ mod utils_ffmpeg;
 mod workers;
 
 use eframe::egui;
+use eframe::glow;
 use eframe::egui::{ColorImage, TextureHandle, Image};
 
 use crate::utils_ffmpeg::check_ffmpeg;
@@ -17,13 +18,13 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use crossbeam_channel::{bounded, Sender as CrossbeamSender, Receiver as CrossbeamReceiver};
 
 use std::process::{ChildStdin};
-use std::io::{Read, Write, BufReader};
+use std::io::{Read, Write, BufWriter};
 use std::io::ErrorKind;
 
 use nix::sys::signal::{self, Signal};
 use nix::unistd::Pid;
 
-use rand::Rng;
+use chrono::Local;
 use std::time::Duration;
 
 const BUFFER_SIZE: usize = 1024;
@@ -33,16 +34,22 @@ struct MyApp {
     is_recording: Arc<Mutex<bool>>,
     rx_record: CrossbeamReceiver<Vec<u8>>,
     pid_record: Option<Pid>,
+    stdin_record: Option<Arc<Mutex<ChildStdin>>>,
+    target_address: String,
+    own_ip: String,
 }
 
 impl MyApp {
-    fn new(frames: Receiver<ColorImage>, is_recording: Arc<Mutex<bool>>, rx_record: CrossbeamReceiver<Vec<u8>>) -> Self {
+    fn new(own_ip: String, target_address: String, frames: Receiver<ColorImage>, is_recording: Arc<Mutex<bool>>, rx_record: CrossbeamReceiver<Vec<u8>>) -> Self {
         Self {
             texture: None,
             frames,
             is_recording,
             rx_record,
             pid_record: None,
+            stdin_record: None,
+            target_address,
+            own_ip
         }
     }
 
@@ -53,13 +60,21 @@ impl MyApp {
         }
     }
 
-    fn start_record(stdin: Mutex<ChildStdin>, rx_record: CrossbeamReceiver<Vec<u8>>){
-        let mut stdin = stdin.lock().unwrap();
+    fn start_record(stdin: Arc<Mutex<ChildStdin>>, rx_record: CrossbeamReceiver<Vec<u8>>){
+        
+        let mut i = 0;
         loop {
-            match rx_record.recv() {
+            match rx_record.recv_timeout(Duration::from_secs(1)) {
                 Ok(data) => {
-                    match stdin.write_all(&data){
-                        Ok(_) => {},
+                    let mut stdin = stdin.lock().unwrap();
+                    let mut writer = BufWriter::new(&mut *stdin);
+                    match writer.write_all(&data){
+                        Ok(_) => {
+                            i += 1;
+                            if i % 50 == 0 {
+                                eprintln!("Data written to record");
+                            }
+                        },
                         Err(e) if e.kind() == ErrorKind::BrokenPipe => {
                             eprintln!("Closed record process: {}", e);
                             break;
@@ -72,6 +87,7 @@ impl MyApp {
                 }
                 Err(err) => {
                     eprintln!("Failed to receive data record: {}", err);
+                    break;
                 }
             }
         }
@@ -93,10 +109,14 @@ impl eframe::App for MyApp {
                         if ui.add_sized([100.0, 40.0], egui::Button::new("Stop Record")).clicked() {
                             let mut recording_guard = self.is_recording.lock().unwrap();
                             if *recording_guard && self.pid_record.is_some(){
-                                match signal::kill(pid, Signal::SIGINT){
+                                let mut stdin_record = self.stdin_record.as_mut().unwrap().lock().unwrap();
+                                stdin_record.flush().unwrap();
+                                match stdin_record.write_all(b""){
                                     Ok(_) => {
                                         println!("Record process killed");
+                                        drop(stdin_record);
                                         self.pid_record = None;
+                                        self.stdin_record = None;   
                                         *recording_guard = false;
                                     },
                                     Err(e) => {
@@ -110,11 +130,12 @@ impl eframe::App for MyApp {
                     if ui.add_sized([100.0, 40.0], egui::Button::new("Start Record")).clicked() {
                         let mut recording_guard = self.is_recording.lock().unwrap();
                         if !*recording_guard && self.pid_record.is_none() {
+                            let file_name = Local::now().format("%Y-%m-%d_%H-%M-%S").to_string();
                             // Configura ffmpeg-sidecar per registrare
                             let mut ffmpeg_command_record = FfmpegCommand::new()
                                 .input("pipe:0")
-                                .args(&["-c:v", "copy"])
-                                .output("output.mp4")
+                                .args(&["-c:v", "copy", "-y"])
+                                .output(format!("{file_name}.mp4"))
                                 .spawn()
                                 .expect("Impossibile avviare ffmpeg per registrare");
                             let mut stderr_record = ffmpeg_command_record.take_stderr().unwrap();
@@ -129,12 +150,14 @@ impl eframe::App for MyApp {
                                 }
                             });
 
-                            let stdin_mutex = Mutex::new(ffmpeg_command_record.take_stdin().unwrap());
+                            let stdin_mutex = Arc::new(Mutex::new(ffmpeg_command_record.take_stdin().unwrap()));
+                            let stdin_mutex_clone = stdin_mutex.clone();
                             self.pid_record = Some(Pid::from_raw(ffmpeg_command_record.as_inner_mut().id() as i32));
                             let rx_record_clone = self.rx_record.clone();
                             thread::spawn( || {
-                                MyApp::start_record(stdin_mutex, rx_record_clone);
+                                MyApp::start_record(stdin_mutex_clone, rx_record_clone);
                             });
+                            self.stdin_record = Some(stdin_mutex);
                             *recording_guard = true;
                             drop(recording_guard);
                         }
@@ -144,6 +167,27 @@ impl eframe::App for MyApp {
         });
         ctx.request_repaint_after(Duration::from_secs_f32(1.0 / 30.0));
     }
+
+    fn on_exit(&mut self, _gl: Option<&glow::Context>) {
+        let socket = Arc::new(UdpSocket::bind(format!("{}:3041", self.own_ip)).expect("Failed to bind socket"));  
+        let mut buffer = [0; BUFFER_SIZE];
+        let message = format!("STOP\n{}:3040", self.own_ip);
+        loop{
+            socket.send_to(&message.as_bytes(), &self.target_address);
+            match socket.recv(&mut buffer) {
+                Ok(number_of_bytes) => {
+                    let data = &buffer[..number_of_bytes];
+                    if data == "OK".as_bytes() {
+                        break;
+                    }
+                }
+                Err(err) => {
+                    eprintln!("Failed to receive data: {}", err);
+                }
+            }
+
+        }
+    }
 }
 
 
@@ -152,7 +196,7 @@ fn main() {
     check_ffmpeg().expect("Errore nel controllo di FFmpeg");
 
     //Source address
-    let destination_ip = "192.168.1.35"; //defined manually by the user
+    let destination_ip = "192.168.1.24"; //defined manually by the user
     let target_address = format!("{destination_ip}:8080");
 
     //Check and get local ip address
@@ -166,12 +210,12 @@ fn main() {
     };
 
     //Define socket
-    let socket = UdpSocket::bind(format!("{ip_address}:3040")).expect("Failed to bind socket");  // Il client bind sulla porta 8080
-
+    let socket = Arc::new(UdpSocket::bind(format!("{ip_address}:3040")).expect("Failed to bind socket"));  // Il client bind sulla porta 8080
     let mut buffer = [0; BUFFER_SIZE];
     let message = "START".as_bytes();
     socket.set_read_timeout(Some(Duration::from_secs(10))).expect("Failed to set read timeout");
 
+    //INIT CONNECTION
     loop{
         socket.send_to(&message, &target_address).expect("Failed to send START message");
         match socket.recv(&mut buffer) {
@@ -239,6 +283,7 @@ fn main() {
                 .spawn()
                 .expect("Impossibile avviare ffmpeg");
         let mut stdin = ffmpeg_command.take_stdin().unwrap();
+        let mut writer = BufWriter::new(&mut stdin);
         //DECODE AND PLAY
         let w_manager = Arc::new(workers::WorkersManger::new(5, Arc::new(Mutex::new(receiver_frame)), sender_image));
         let w_manager2 = w_manager.clone();
@@ -263,7 +308,7 @@ fn main() {
         loop {
             match rx_playback.recv() {
                 Ok(data) => {
-                    stdin.write_all(&data).unwrap();
+                    writer.write_all(&data).unwrap();
                 }
                 Err(err) => {
                     eprintln!("Failed to receive data playback: {}", err);
@@ -276,5 +321,5 @@ fn main() {
         vsync: true,
         ..Default::default()
     };
-    let _ = eframe::run_native("Image Viewer 30 FPS", options, Box::new(|_cc| Ok(Box::new(MyApp::new(receiver_image, is_recording, rx_record)))));
+    let _ = eframe::run_native("Image Viewer 30 FPS", options, Box::new(|_cc| Ok(Box::new(MyApp::new(ip_address, target_address, receiver_image, is_recording, rx_record)))));
    }

@@ -9,6 +9,7 @@ use local_ip_address::local_ip;
 //use tokio::net::UdpSocket;
 // use tokio::{task, sync::broadcast};
 // use std::sync::Arc;
+use std::collections::HashMap;
 use std::process::Stdio;
 use ffmpeg_sidecar::command::FfmpegCommand;
 use std::net::SocketAddr;
@@ -20,8 +21,6 @@ fn handle_client(socket: std::sync::Arc<UdpSocket>, client_address: String) {}
 
 const BUFFER_SIZE: usize = 1024;
 struct Client{
-    ip: String,
-    port: u16,
     tx: std::sync::mpsc::Sender<Vec<u8>>,
 }
 
@@ -65,7 +64,7 @@ fn main() -> std::io::Result<()> {
     let mut buffer: [u8; BUFFER_SIZE] = [0; BUFFER_SIZE];
 
     //Lista dei client connessi
-    let list_tx_clients: Arc<Mutex<Vec<Client>>> = Arc::new(Mutex::new(Vec::new()));
+    let list_tx_clients: Arc<Mutex<HashMap<String, Client>>> = Arc::new(Mutex::new(HashMap::new()));
     let list_tx_clients_clone = Arc::clone(&list_tx_clients);
 
     //LISTENER THREAD
@@ -93,9 +92,7 @@ fn main() -> std::io::Result<()> {
 
                 // Aggiungi il client alla lista
                 let mut list_guard = list_tx_clients.lock().unwrap();
-                list_guard.push(Client{
-                    ip: client_address.ip().to_string(),
-                    port: client_address.port(),
+                list_guard.insert(target_address.clone(), Client{
                     tx: tx,
                 });
 
@@ -105,10 +102,25 @@ fn main() -> std::io::Result<()> {
                 //Spawna un thread per inviare i dati al client
                 thread::spawn(move || {
                     loop {
-                        let data = rx.recv().unwrap();
-                        send_socket.send_to(&data, &target_address).unwrap();
+                        // Ricevi i dati dal canale e inviali; quando il client viene rimosso dalla lista, il tx viene droppato e il thread termina
+                        match rx.recv(){
+                            Ok(data) => {send_socket.send_to(&data, &target_address).unwrap();},
+                            Err(e) => {
+                                eprintln!("Errore durante la ricezione dei dati: {}", e);
+                                break;
+                            }
+                        }
                     }
                 });   
+            }
+            
+            if message.trim().starts_with("STOP"){
+                let message = message.split("\n").collect::<Vec<&str>>();
+                let ip = message[1];
+                let mut list_guard = list_tx_clients.lock().unwrap();
+                list_guard.remove(ip);
+                drop(list_guard);
+                listener_socket.send_to(b"OK", &client_address).unwrap();
             }
         }
     });
@@ -133,7 +145,7 @@ fn main() -> std::io::Result<()> {
                 break;
             }
             let clients = list_tx_clients_clone.lock().unwrap();
-            for client in clients.iter() {
+            for client in clients.values() {
                 client.tx.send(buffer[..n].to_vec()).unwrap();
             }
         }
