@@ -4,12 +4,12 @@ use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 use std::env;
+use std::ops::Sub;
 use anyhow::Context;
 use druid::{AppLauncher, LocalizedString, Scale, WidgetExt, WindowDesc};
 use druid::piet::{Color, RenderContext};
 use druid::widget::{Widget};
 use druid::{Data, Env, EventCtx, Point, Rect, Lens, Event, LifeCycle, LifeCycleCtx, UpdateCtx, LayoutCtx, BoxConstraints, Size};
-use core_graphics::display::{CGDisplay, CGDisplayBounds, CGMainDisplayID};
 
 #[derive(Clone, Data, Lens)]
 pub struct AppData {
@@ -41,7 +41,7 @@ impl Widget<AppData> for DrawingOverlay {
             Event::MouseUp(_) => {
                 // Complete the drawing and add the shape to the shapes vector
                 if let (Some(start), Some(end)) = (data.start_point, data.end_point) {
-                    let rect = Rect::from_points(start, end);
+                    let rect = Rect::from_points(start, end).trunc();
                     let scale = ctx.scale();
                     save_point(rect, scale);
                     ctx.submit_command(druid::commands::QUIT_APP);
@@ -64,10 +64,10 @@ impl Widget<AppData> for DrawingOverlay {
         &mut self,
         ctx: &mut UpdateCtx,
         _old_data: &AppData,
-        data: &AppData,
+        _data: &AppData,
         _env: &Env,
     ) {
-       ctx.request_paint();
+        ctx.request_paint();
     }
 
     fn layout(
@@ -82,16 +82,21 @@ impl Widget<AppData> for DrawingOverlay {
 
     fn paint(&mut self, ctx: &mut druid::PaintCtx, data: &AppData, _env: &Env) {
 
-        let background_rect = ctx.size().to_rect();
-        ctx.fill(background_rect, &Color::rgba8(0xff, 0xff, 0xff, 0x4));
 
-        // Draw current selection outline
+        // Draw current selection outline, ensuring transparency inside
         if let (Some(start), Some(end)) = (data.start_point, data.end_point) {
-            let border_width = 2.0;
 
             let rect = Rect::from_points(start, end);
-            ctx.stroke(rect, &Color::BLACK, border_width);
-            ctx.fill(rect, &Color::rgba8(0x00, 0x00, 0x00, 0x00));
+            let background_rect = ctx.size().to_rect();
+            let surrounding_rects = surrounding_rectangles(background_rect, rect);
+
+            for surrounding_rect in surrounding_rects {
+                ctx.fill(surrounding_rect, &Color::rgba(0.0, 0.0, 0.0, 0.5));
+            }
+        }
+        else {
+            let background_rect = ctx.size().to_rect();
+            ctx.fill(background_rect, &Color::rgba(0.0, 0.0, 0.0, 0.5));
         }
     }
 }
@@ -156,4 +161,50 @@ pub fn get_project_src_path() -> PathBuf {
         exe_dir = exe_dir.parent().expect("Failed to get parent directory");
     }
     exe_dir.to_path_buf()
+}
+
+fn surrounding_rectangles(a: Rect, b: Rect) -> Vec<Rect> {
+    let mut result = Vec::new();
+
+    // Calcola il rettangolo sopra B
+    if b.y1 < a.y1 {
+        result.push(Rect {
+            x0: b.x0,
+            x1: b.x1,
+            y0: b.y1,
+            y1: a.y1,
+        });
+    }
+
+    // Calcola il rettangolo sotto B
+    if b.y0 > a.y0 {
+        result.push(Rect {
+            x0: b.x0,
+            x1: b.x1,
+            y0: a.y0,
+            y1: b.y0,
+        });
+    }
+
+    // Calcola il rettangolo a sinistra di B
+    if b.x0 > a.x0 {
+        result.push(Rect {
+            x0: a.x0,
+            x1: b.x0,
+            y0: a.y0,
+            y1: a.y1,
+        });
+    }
+
+    // Calcola il rettangolo a destra di B
+    if b.x1 < a.x1 {
+        result.push(Rect {
+            x0: b.x1,
+            x1: a.x1,
+            y0: a.y0,
+            y1: a.y1,
+        });
+    }
+
+    result
 }
