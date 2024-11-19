@@ -7,11 +7,11 @@ edition = "2021"
 
 [dependencies]
 tokio = { version = "1.40", features = ["full"] }
-eframe = { version = "0.28.1", features = ["default", "wgpu", "__screenshot"] }
+eframe = { version = "0.28.1", features = ["default", "wgpu", "__screenshot", "glow"] }
 image = { version = "*", features = ["png"] }
 ffmpeg-sidecar = "1.1.0"
 crossbeam-channel = "*"
 crossbeam-utils = "*"
-rand = "0.8"
+chrono = "*"
 local-ip-address = "*"
 nix = "*"
