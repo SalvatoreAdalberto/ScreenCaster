@@ -1,0 +1,13 @@
+[package]
+name = "annotation_tool"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+druid = {version = "0.8.3", features = ["raw-win-handle", "image"] }
+anyhow = "1.0.93"
+raw-window-handle = "0.4"
+libc = "0.2.164"
+winit = "0.24.0"
+winapi = { version = "0.3.8", features = ["windef", "winuser", "basetsd"] }
+windows = { version = "*", features = ["Win32_UI", "Win32_UI_WindowsAndMessaging"] }

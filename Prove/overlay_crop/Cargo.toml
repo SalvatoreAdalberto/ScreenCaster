@@ -6,4 +6,3 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.93"
 druid = { version = "0.8.3", features = ["svg"] }
-core-graphics = "0.23.2"

@@ -4,7 +4,6 @@ use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 use std::env;
-use std::ops::Sub;
 use anyhow::Context;
 use druid::{AppLauncher, LocalizedString, Scale, WidgetExt, WindowDesc};
 use druid::piet::{Color, RenderContext};
@@ -41,7 +40,15 @@ impl Widget<AppData> for DrawingOverlay {
             Event::MouseUp(_) => {
                 // Complete the drawing and add the shape to the shapes vector
                 if let (Some(start), Some(end)) = (data.start_point, data.end_point) {
-                    let rect = Rect::from_points(start, end).trunc();
+                    let mut x = start;
+                    let mut y = end;
+                    #[cfg(target_os = "windows")]
+                    {
+                        x = ctx.to_screen(start);
+                        y = ctx.to_screen(end);
+                    }
+
+                    let rect = Rect::from_points(x, y).trunc();
                     let scale = ctx.scale();
                     save_point(rect, scale);
                     ctx.submit_command(druid::commands::QUIT_APP);
@@ -67,7 +74,7 @@ impl Widget<AppData> for DrawingOverlay {
         _data: &AppData,
         _env: &Env,
     ) {
-        ctx.request_paint();
+       ctx.request_paint();
     }
 
     fn layout(
@@ -128,11 +135,11 @@ pub fn main() -> anyhow::Result<()> {
 pub fn compute_window_size() -> anyhow::Result<(f64, f64, f64, f64)> {
     let screens = druid::Screen::get_monitors();
     println!("{:?}", screens);
-    let width = screens.to_vec()[0].virtual_rect().width();
-    let height = screens.to_vec()[0].virtual_rect().height();
-    let top_x = screens.to_vec()[0].virtual_rect().x0;
-    let top_y = screens.to_vec()[0].virtual_work_rect().y0;
-    Ok((width, height, top_x, top_y))
+    let width = screens.to_vec()[1].virtual_rect().width();
+    let height = screens.to_vec()[1].virtual_rect().height();
+    let top_x = screens.to_vec()[1].virtual_rect().x0;
+    let top_y = screens.to_vec()[1].virtual_work_rect().y0;
+    Ok((width, height-1.0, top_x, top_y+1.0))
 }
 
 fn save_point(rect: Rect, scale: Scale) {
