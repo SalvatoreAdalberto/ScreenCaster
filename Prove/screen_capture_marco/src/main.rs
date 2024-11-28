@@ -4,10 +4,14 @@ use global_hotkey::GlobalHotKeyManager;
 use global_hotkey::hotkey::{Code, HotKey, Modifiers};
 use crate::hotkeys::AppState;
 
+mod workers;
+mod utils;
 mod screen_capture;
 mod gui;
 mod hotkeys;
 mod annotation_tool;
+mod gif_widget;
+mod streaming_client;
 
 fn main() {
     screen_capture::check_ffmpeg().expect("Failed to check FFmpeg");

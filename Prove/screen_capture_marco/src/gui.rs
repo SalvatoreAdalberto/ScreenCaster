@@ -1,12 +1,17 @@
-use iced::widget::{text_input, Button, Column, Container, Row, Text, TextInput};
-use iced::{Alignment, Element, Length, Application, Command, Settings, Theme};
+use iced::widget::{ Button, Column, Container, Row, Text, TextInput, Scrollable, image};
+use iced::{Alignment, Element, Length, Application, Command, Settings, Theme, Subscription, window::Action};
 use crate::screen_capture::{ScreenCapture};
+use crate::utils;
 use std::sync::{Arc, Mutex};
 use egui::Pos2;
 use global_hotkey::GlobalHotKeyManager;
 use global_hotkey::hotkey::{HotKey, Modifiers};
 use crate::hotkeys::{AppState, parse_key_code};
-use std::process::{Child, Command as Command2};
+use std::process::{Child, Command as Command2, Output};
+use std::collections::HashMap;
+use crate::gif_widget::{self, GifPlayer, GifPlayerMessage};
+use crate::streaming_client::{StreamingClient, VideoPlayerMessage};
+use iced::window::Event;
 
 // Definiamo i messaggi dell'applicazione
 #[derive(Debug, Clone)]
@@ -16,13 +21,21 @@ pub enum Message {
     StartCasting,
     StopCasting,
     GoBackHome,
-    IpAddressChanged(String),
-    SaveIpAddress,
+    SuggestionClicked((String, String)),
+    InputChanged(String),
     StartRecordHotkeyChanged(String),
     StopRecordHotkeyChanged(String),
     GoToChangeHotKeys,
     SaveHotKeys,
     ToggleAnnotationMode,
+    TryConnect,
+    Connecting,
+    NoMatchFound,
+    MultipleMatches,
+    NotInLan,
+    VideoPlayerMessage(VideoPlayerMessage),
+    StopConnection,
+    EventOccurred(Event)
 }
 
 // Stati possibili dell'applicazione
@@ -30,15 +43,17 @@ pub enum Message {
 pub enum AppStateEnum {
     Home,
     Sharing,
-    Viewing,
+    Connect,
     ChangeHotKeys,
+    Watching,
+
 }
 
 // Struttura dell'applicazione
 pub struct ScreenCaster {
     state: AppStateEnum,
     ip_address: String,
-    ip_input_state: text_input::State,
+    input_state: String,
     screen_capture: ScreenCapture,
     app_state: Arc<Mutex<AppState>>, // Stato condiviso dell'applicazione
     manager: Arc<Mutex<GlobalHotKeyManager>>,
@@ -49,6 +64,10 @@ pub struct ScreenCaster {
     start_shortcut: String,        // Shortcut per avviare la registrazione
     stop_shortcut: String,         // Shortcut per fermare la registrazione
     handle_annotation_tool: Option<Child>,
+    client: Option<Output>,
+    streamers_map: HashMap<String, String>,
+    streamers_suggestions: Vec<(String, String)>,
+    streaming_client: Option<StreamingClient>,
 }
 
 impl Application for ScreenCaster {
@@ -62,7 +81,7 @@ impl Application for ScreenCaster {
             ScreenCaster {
                 state: AppStateEnum::Home,
                 ip_address: String::new(),
-                ip_input_state: text_input::State::new(),
+                input_state: String::new(),
                 screen_capture: ScreenCapture::new(),
                 app_state: flags.0,
                 manager: flags.1,
@@ -73,6 +92,10 @@ impl Application for ScreenCaster {
                 start_shortcut: "H".to_string(),
                 stop_shortcut: "F".to_string(),
                 handle_annotation_tool: None,
+                client: None,
+                streamers_map: utils::get_streamers_map(),
+                streamers_suggestions: Vec::new(),
+                streaming_client: None,
             },
             Command::none(),
         )
@@ -91,7 +114,7 @@ impl Application for ScreenCaster {
                 app_state.is_sharing = true; // Imposta lo stato di condivisione
             }
             Message::GoToViewScreen => {
-                self.state = AppStateEnum::Viewing;
+                self.state = AppStateEnum::Connect;
                 app_state.is_sharing = false; // Non siamo in condivisione
             }
             Message::StartCasting => {
@@ -106,11 +129,78 @@ impl Application for ScreenCaster {
                 self.state = AppStateEnum::Home;
                 app_state.is_sharing = false; // Uscita dalla condivisione
             }
-            Message::IpAddressChanged(new_ip) => {
-                self.ip_address = new_ip;
+            Message::SuggestionClicked((suggestion, ip)) => {
+                self.ip_address = ip;
+                self.input_state = suggestion;
+                self.streamers_suggestions.clear();
+
             }
-            Message::SaveIpAddress => {
-                println!("Indirizzo IP salvato: {}", self.ip_address);
+            Message::InputChanged(value) => {
+                self.input_state = (&value).to_string();
+                self.streamers_suggestions = self
+                    .streamers_map
+                    .iter()
+                    .filter(|(key, ip)| key.to_lowercase().starts_with(&value) || ip.starts_with(&value))
+                    .map(|(key, ip)| (key.clone(), ip.clone()))
+                    .collect();
+                self.ip_address.clear();
+
+            }
+            Message::TryConnect => {
+                if self.ip_address.is_empty(){
+                    let matching = self.streamers_map.iter()
+                    .filter(|(key, ip)| key.to_lowercase().starts_with(&self.input_state) || ip.starts_with(&self.input_state))
+                    .map(|(_, ip)| ip.clone())
+                    .collect::<Vec<String>>();
+                    
+                    match matching.len() {
+                        0 => {
+                            return Command::perform(async {}, |_| Message::NoMatchFound);
+                        }
+                        1 => {
+                            self.ip_address = matching[0].clone();
+                        }
+                        _ => {
+                            return Command::perform(async {}, |_| Message::MultipleMatches);
+                        }
+                    }
+                   
+                    
+                }
+                if utils::is_ip_in_lan(&self.ip_address) {
+                    self.state = AppStateEnum::Watching;
+                    self.streaming_client = Some(StreamingClient::new(self.ip_address.clone()));
+                    return Command::perform(async {}, |_| Message::Connecting);
+                }else{
+                    return Command::perform(async {}, |_| Message::NotInLan );
+                }
+            }
+            Message::VideoPlayerMessage(message) => {
+                if let Some(sc) = &mut self.streaming_client {
+                    sc.update(message);
+                }
+            }
+            Message::StopConnection => {
+                if let Some(sc) = &mut self.streaming_client {
+                    sc.update(VideoPlayerMessage::Exit);
+                    self.streaming_client = None;
+                }
+                self.state = AppStateEnum::Connect;
+                
+            }
+            Message::Connecting => {
+                if let Some(sc) = &mut self.streaming_client {
+                    sc.update(VideoPlayerMessage::Connect);
+                }
+            }
+            Message::NoMatchFound => {
+                println!("Nessuna corrispondenza trovata");
+            }
+            Message::MultipleMatches => {
+                println!("Trovate più corrispondenze");
+            }
+            Message::NotInLan => {
+                println!("L'indirizzo IP non è nella LAN");
             }
             Message::GoToChangeHotKeys => {
                 self.state = AppStateEnum::ChangeHotKeys
@@ -164,6 +254,13 @@ impl Application for ScreenCaster {
                         .expect("Non è stato possibile avviare la finestra 2"));
                 }
             }
+            Message::EventOccurred(event) => {
+                if let Event::CloseRequested = event{
+                    if let Some(_) = self.streaming_client{
+                        return Command::perform(async {}, |_| Message::StopConnection);
+                    }
+                }
+            }
         }
 
         Command::none()
@@ -173,15 +270,25 @@ impl Application for ScreenCaster {
         match self.state {
             AppStateEnum::Home => self.view_home(),
             AppStateEnum::Sharing => self.view_sharing(),
-            AppStateEnum::Viewing => self.view_viewing(),
+            AppStateEnum::Connect => self.view_connect(),
             AppStateEnum::ChangeHotKeys => self.view_change_hotkey(),
+            AppStateEnum::Watching => self.view_watching(),
         }
     }
 
     fn theme(&self) -> Theme {
         Theme::Dark  // Tema scuro
     }
+
+    fn subscription(&self) -> Subscription<Message> {
+        match self.state {
+            AppStateEnum::Watching => {if let Some(sc) = self.streaming_client.as_ref() { sc.subscription().map(Message::VideoPlayerMessage)}
+                else{ Subscription::none()}},
+            _ => {Subscription::none()}
+        }
+    }
 }
+
 
 impl ScreenCaster {
     // Vista della Home Page
@@ -265,7 +372,7 @@ impl ScreenCaster {
     }
 
     // Vista per la visualizzazione dello schermo condiviso
-    fn view_viewing(&self) -> Element<Message> {
+    fn view_connect(&self) -> Element<Message> {
         let content = Column::new()
             .spacing(20)
             .align_items(Alignment::Center)
@@ -273,21 +380,40 @@ impl ScreenCaster {
             .push(
                 TextInput::new(
                     "Inserisci l'indirizzo IP...",
-                    &self.ip_address,
+                    &self.input_state,
                 )
                     .padding(10)
-                    .width(Length::Fixed(300.0))
-                    .on_input(Message::IpAddressChanged),
+                    .width(Length::Fixed(500.0))
+                    .on_input(|input| Message::InputChanged(input)),
+            )
+            .push(
+                Scrollable::new(
+                        self.streamers_suggestions.iter().fold(Column::new().spacing(5), |column, (suggestion, ip)| {
+                            column.push(
+                                Button::new(
+                                        Row::new()
+                                            .spacing(350)
+                                            .align_items(Alignment::Center)
+                                            .push(Text::new(suggestion))
+                                            .push(Text::new(ip))
+                                )
+                                .on_press(Message::SuggestionClicked((suggestion.clone(), ip.clone())))
+                                .padding(8)
+                                .width(Length::Fixed(500.0)),
+                            )
+                        }),
+                    ),
+                    
             )
             .push(
                 Row::new()
                     .spacing(20)
                     .align_items(Alignment::Center)
                     .push(
-                        Button::new(Text::new("Salva Indirizzo IP"))
+                        Button::new(Text::new("Connetti"))
                             .padding(10)
                             .width(Length::Fixed(200.0))
-                            .on_press(Message::SaveIpAddress),
+                            .on_press(Message::TryConnect),
                     )
                     .push(
                         Button::new(Text::new("Torna alla Home"))
@@ -305,6 +431,43 @@ impl ScreenCaster {
             .into()
     }
 
+    fn view_watching(&self) -> Element<Message> {
+        let content;
+        if let Some(sc) = self.streaming_client.as_ref(){
+            let video_player = sc.view_video().map(Message::VideoPlayerMessage);
+            let record_button = sc.view_record_button().map(Message::VideoPlayerMessage);
+            content = Column::new()
+                        .push(video_player)
+                        .push(
+                            Row::new()
+                            .spacing(20)
+                            .align_items(Alignment::Center)
+                            .push(
+                                Button::new(Text::new("Stop watching"))
+                                    .padding(10)
+                                    .width(Length::Fixed(200.0))
+                                    .on_press(Message::StopConnection),
+                            )
+                            .push(
+                                record_button
+                            ),
+                        );
+                        
+
+        }else{
+            content = Column::new()
+                .push(Text::new("SOMETHING WENT WRONG"));
+        }
+                    
+        Container::new(content)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center_x()
+            .center_y()
+            .into()
+        
+    }
+    
     fn view_change_hotkey(&self) -> Element<Message> {
         let content = Column::new()
             .spacing(20)
