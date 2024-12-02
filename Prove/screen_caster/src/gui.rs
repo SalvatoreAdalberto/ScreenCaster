@@ -1,6 +1,5 @@
 use iced::widget::{ Button, Column, Container, Row, Text, TextInput, Scrollable};
 use iced::{Alignment, Element, Length, Application, Command, Settings, Theme, Subscription};
-use crate::screen_capture::{ScreenCapture};
 use crate::utils;
 use std::sync::{Arc, Mutex};
 use global_hotkey::GlobalHotKeyManager;
@@ -8,6 +7,7 @@ use global_hotkey::hotkey::{HotKey, Modifiers};
 use crate::hotkeys::{AppState, parse_key_code};
 use std::process::{Child, Command as Command2, Output};
 use std::collections::HashMap;
+use crate::streaming_server::StreamingServer;
 use crate::streaming_client::{StreamingClient, VideoPlayerMessage};
 use iced::window::Event;
 
@@ -26,6 +26,7 @@ pub enum Message {
     GoToChangeHotKeys,
     SaveHotKeys,
     ToggleAnnotationMode,
+    SelectCropArea,
     TryConnect,
     Connecting,
     NoMatchFound,
@@ -52,7 +53,6 @@ pub struct ScreenCaster {
     state: AppStateEnum,
     ip_address: String,
     input_state: String,
-    screen_capture: ScreenCapture,
     app_state: Arc<Mutex<AppState>>, // Stato condiviso dell'applicazione
     manager: Arc<Mutex<GlobalHotKeyManager>>,
     start_hotkey: HotKey,
@@ -80,7 +80,6 @@ impl Application for ScreenCaster {
                 state: AppStateEnum::Home,
                 ip_address: String::new(),
                 input_state: String::new(),
-                screen_capture: ScreenCapture::new(),
                 app_state: flags.0,
                 manager: flags.1,
                 start_hotkey: flags.4,
@@ -116,11 +115,11 @@ impl Application for ScreenCaster {
                 app_state.is_sharing = false; // Non siamo in condivisione
             }
             Message::StartCasting => {
-                app_state.screen_capture.start(); // Avvia la registrazione
+                app_state.streaming_server.start(); // Avvia la registrazione
                 println!("Screen casting avviato!");
             }
             Message::StopCasting => {
-                app_state.screen_capture.stop(); // Ferma la registrazione
+                app_state.streaming_server.stop(); // Ferma la registrazione
                 println!("Screen casting fermato!");
             }
             Message::GoBackHome => {
@@ -248,10 +247,23 @@ impl Application for ScreenCaster {
                     self.handle_annotation_tool.as_mut().unwrap().kill().unwrap();
                     self.handle_annotation_tool = None;
                 } else {
-                    self.handle_annotation_tool = Some(Command2::new("./target/debug/annotation_tool")
+                    let exe_path = utils::get_project_src_path();
+                    let mut real_path = "".to_string();
+                    real_path = exe_path.display().to_string() + r"/annotation_tool/target/release/annotation_tool";
+                    self.handle_annotation_tool = Some(Command2::new(real_path)
+                        .arg("t")
                         .spawn()
-                        .expect("Non è stato possibile avviare la finestra 2"));
+                        .expect("Non è stato possibile avviare l'annotation tool"));
                 }
+            }
+            Message::SelectCropArea => {
+                let exe_path = utils::get_project_src_path();
+                let mut real_path = "".to_string();
+                real_path = exe_path.display().to_string() + r"/overlay_crop/target/release/overlay_crop";
+                Command2::new(real_path)
+                    .arg("t")
+                    .output()
+                    .expect("Non è stato possibile avviare l'overlay crop");
             }
             Message::EventOccurred(event) => {
                 if let Event::CloseRequested = event{
