@@ -1,4 +1,4 @@
-use iced::widget::{Button, Column, Container, Row, Text, TextInput, Scrollable, PickList};
+use iced::widget::{Button, Column, Container, Row, Text, TextInput, Scrollable, PickList, Space};
 use iced::{Alignment, Element, Length, Application, Command, Settings, Theme, Subscription};
 use crate::utils;
 use std::sync::{Arc, Mutex};
@@ -75,7 +75,7 @@ pub struct ScreenCaster {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ShareMode {
+pub enum ShareMode {
     Fullscreen,
     CropArea,
 }
@@ -145,14 +145,14 @@ impl Application for ScreenCaster {
                     let mut real_path = "".to_string();
                     real_path = exe_path.display().to_string() + r"/overlay_crop/target/release/overlay_crop";
                     Command2::new(real_path)
-                        .arg("t")
+                        .arg(self.selected_screen.to_string())
                         .output()
                         .expect("Non è stato possibile avviare l'overlay crop");
                 }
                 self.state = AppStateEnum::Sharing;
             }
             Message::StartCasting => {
-                app_state.streaming_server.start(); // Avvia la registrazione
+                app_state.streaming_server.start(self.selected_screen, self.share_mode); // Avvia la registrazione
                 println!("Screen casting avviato!");
             }
             Message::StopCasting => {
@@ -183,10 +183,10 @@ impl Application for ScreenCaster {
             Message::TryConnect => {
                 if self.ip_address.is_empty(){
                     let matching = self.streamers_map.iter()
-                        .filter(|(key, ip)| key.to_lowercase().starts_with(&self.input_state) || ip.starts_with(&self.input_state))
-                        .map(|(_, ip)| ip.clone())
-                        .collect::<Vec<String>>();
-
+                    .filter(|(key, ip)| key.to_lowercase().starts_with(&self.input_state) || ip.starts_with(&self.input_state))
+                    .map(|(_, ip)| ip.clone())
+                    .collect::<Vec<String>>();
+                    
                     match matching.len() {
                         0 => {
                             self.ip_address = self.input_state.clone();
@@ -199,8 +199,8 @@ impl Application for ScreenCaster {
                             return Command::perform(async {}, |_| Message::MultipleMatches);
                         }
                     }
-
-
+                   
+                    
                 }
                 if utils::is_ip_in_lan(&self.ip_address) {
                     self.state = AppStateEnum::Watching;
@@ -221,7 +221,7 @@ impl Application for ScreenCaster {
                     self.streaming_client = None;
                 }
                 self.state = AppStateEnum::Connect;
-
+                
             }
             Message::Connecting => {
                 if let Some(sc) = &mut self.streaming_client {
@@ -288,7 +288,7 @@ impl Application for ScreenCaster {
                     let mut real_path = "".to_string();
                     real_path = exe_path.display().to_string() + r"/annotation_tool/target/release/annotation_tool";
                     self.handle_annotation_tool = Some(Command2::new(real_path)
-                        .arg("t")
+                        .arg(self.selected_screen.to_string())
                         .spawn()
                         .expect("Non è stato possibile avviare l'annotation tool"));
                 }
@@ -338,7 +338,7 @@ impl Application for ScreenCaster {
     fn subscription(&self) -> Subscription<Message> {
         match self.state {
             AppStateEnum::Watching => {if let Some(sc) = self.streaming_client.as_ref() { sc.subscription().map(Message::VideoPlayerMessage)}
-            else{ Subscription::none()}},
+                else{ Subscription::none()}},
             _ => {Subscription::none()}
         }
     }
@@ -390,40 +390,59 @@ impl ScreenCaster {
         let n_screens = utils::count_screens();
         let screens = (1..=n_screens).collect::<Vec<usize>>();
         let modes = vec![ShareMode::Fullscreen, ShareMode::CropArea];
+
         let content = Column::new()
-            .spacing(20)
+            .spacing(40)
             .align_items(Alignment::Center)
             .push(Text::new("Seleziona lo schermo da condividere").size(30))
             .push(
                 Row::new()
-                    .spacing(20)
+                    .spacing(40)
                     .align_items(Alignment::Center)
                     .push(
-                        PickList::new(
-                            screens,
-                            Some(self.selected_screen),
-                            Message::PickList,
-                        )
-                            .placeholder("Seleziona uno schermo..."),
+                        Column::new()
+                            .spacing(20)
+                            .align_items(Alignment::Center)
+                            .push(Text::new("Schermo da condividere:").size(20))
+                            .push(
+                                PickList::new(
+                                    screens,
+                                    Some(self.selected_screen),
+                                    Message::PickList,
+                                )
+                                    .placeholder("Seleziona uno schermo..."),
+                            ),
                     )
                     .push(
-                        PickList::new(
-                            modes,
-                            Some(self.share_mode),
-                            Message::ModeSelected,
-                        )
-                            .placeholder("Seleziona una modalità..."),
-                    )
+                        Column::new()
+                            .spacing(20)
+                            .align_items(Alignment::Center)
+                            .push(Text::new("Modalità di condivisione:").size(20))
+                            .push(
+                                PickList::new(
+                                    modes,
+                                    Some(self.share_mode),
+                                    Message::ModeSelected,
+                                )
+                                    .placeholder("Seleziona una modalità..."),
+                            ),
+                    ),
             )
+            .push(Space::with_height(30))
             .push(
                 Row::new()
-                    .spacing(20)
+                    .spacing(40)
                     .align_items(Alignment::Center)
                     .push(
-                        Button::new(Text::new("Next"))
+                        Button::new(Text::new("Torna alla Home"))
+                            .padding(10)
+                            .on_press(Message::GoBackHome),
+                    )
+                    .push(
+                        Button::new(Text::new("Conferma"))
                             .padding(10)
                             .on_press(Message::ScreenSelected),
-                    )
+                    ),
             );
 
         Container::new(content)
@@ -491,22 +510,22 @@ impl ScreenCaster {
             )
             .push(
                 Scrollable::new(
-                    self.streamers_suggestions.iter().fold(Column::new().spacing(5), |column, (suggestion, ip)| {
-                        column.push(
-                            Button::new(
-                                Row::new()
-                                    .spacing(350)
-                                    .align_items(Alignment::Center)
-                                    .push(Text::new(suggestion))
-                                    .push(Text::new(ip))
-                            )
+                        self.streamers_suggestions.iter().fold(Column::new().spacing(5), |column, (suggestion, ip)| {
+                            column.push(
+                                Button::new(
+                                        Row::new()
+                                            .spacing(350)
+                                            .align_items(Alignment::Center)
+                                            .push(Text::new(suggestion))
+                                            .push(Text::new(ip))
+                                )
                                 .on_press(Message::SuggestionClicked((suggestion.clone(), ip.clone())))
                                 .padding(8)
                                 .width(Length::Fixed(500.0)),
-                        )
-                    }),
-                ),
-
+                            )
+                        }),
+                    ),
+                    
             )
             .push(
                 Row::new()
@@ -540,40 +559,40 @@ impl ScreenCaster {
             let video_player = sc.view_video().map(Message::VideoPlayerMessage);
             let record_button = sc.view_record_button().map(Message::VideoPlayerMessage);
             content = Column::new()
-                .push(video_player)
-                .push(
-                    Row::new()
-                        .spacing(20)
-                        .align_items(Alignment::Center)
+                        .push(video_player)
                         .push(
-                            Button::new(Text::new("Stop watching"))
-                                .padding(10)
-                                .width(Length::Fixed(200.0))
-                                .on_press(Message::StopConnection),
+                            Row::new()
+                            .spacing(20)
+                            .align_items(Alignment::Center)
+                            .push(
+                                Button::new(Text::new("Stop watching"))
+                                    .padding(10)
+                                    .width(Length::Fixed(200.0))
+                                    .on_press(Message::StopConnection),
+                            )
+                            .push(
+                                record_button
+                            )
+                            .align_items(Alignment::Center)
+                            .padding(10),
                         )
-                        .push(
-                            record_button
-                        )
-                        .align_items(Alignment::Center)
-                        .padding(10),
-                )
                 .align_items(Alignment::Center);
-
+                        
 
         }else{
             content = Column::new()
                 .push(Text::new("SOMETHING WENT WRONG"));
         }
-
+                    
         Container::new(content)
             .width(Length::Fill)
             .height(Length::Fill)
             .center_x()
             .center_y()
             .into()
-
+        
     }
-
+    
     fn view_change_hotkey(&self) -> Element<Message> {
         let content = Column::new()
             .spacing(20)

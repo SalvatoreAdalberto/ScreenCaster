@@ -3,12 +3,16 @@ use pnet::datalink;
 use std::io::BufRead;
 use std::env;
 use std::path::PathBuf;
+use druid::Screen;
 use ffmpeg_sidecar::{
     command::ffmpeg_is_installed,
     download::{check_latest_version, download_ffmpeg_package, unpack_ffmpeg},
     paths::sidecar_dir,
     version::ffmpeg_version,
 };
+use ffmpeg_sidecar::command::FfmpegCommand;
+use iced::advanced::graphics::image::image_rs::write_buffer_with_format;
+use crate::streaming_server::CropArea;
 
 pub const STREAMERS_LIST_PATH : &str = "../config/streamers_list.txt";
 
@@ -112,4 +116,62 @@ fn ffmpeg_download_url_custom() -> Result<&'static str, &'static str> {
     } else {
         Err("Unsupported platform")
     }
+}
+
+pub fn compute_window_size(index: usize) -> anyhow::Result<(f64, f64, f64, f64)> {
+    let screens = Screen::get_monitors();
+    println!("{:?}", screens);
+    let width = screens.to_vec()[index].virtual_rect().width();
+    let height = screens.to_vec()[index].virtual_rect().height();
+    let top_x = screens.to_vec()[index].virtual_rect().x0;
+    let top_y = screens.to_vec()[index].virtual_work_rect().y0;
+    Ok((width, height-0.5, top_x, top_y+0.5))
+}
+
+pub fn count_screens() -> usize {
+    let screens = Screen::get_monitors();
+    screens.len()
+}
+
+pub fn get_ffmpeg_command(screen_index:usize, crop: Option<CropArea>) -> String {
+
+    #[cfg(target_os = "macos")]
+    {
+        match crop {
+            Some(crop) => {
+                format!("-f avfoundation -re -video_size 1280x720 -capture_cursor 1 -i {}: -vf crop={}:{}:{}:{} -tune zerolatency -f mpegts -codec:v libx264 -preset slow -crf 28 -pix_fmt yuv420p pipe:1", screen_index, crop.width, crop.height, crop.x_offset, crop.y_offset)
+
+            }
+            None => {
+                format!("-f avfoundation -re -video_size 1280x720 -capture_cursor 1 -i {}: -tune zerolatency -f mpegts -codec:v libx264 -preset slow -crf 28 -pix_fmt yuv420p pipe:1", screen_index)
+            }
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        match crop {
+            Some(crop) => {
+                let com = format!("-f gdigrab -framerate 30 -offset_x {} -offset_y {} -video_size {}x{} -show_region 1 -i desktop -c:v libx264 -f rawvideo -y output.mp4", crop.x_offset, crop.y_offset, crop.width, crop.height);
+                command.args(com.split(" "));
+            }
+            None => {
+                command.args("-f gdigrab -framerate 30 -i desktop -c:v libx264 -f rawvideo -y output.mp4".split(" "));
+            }
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        match crop {
+            Some(crop) => {
+                let com = format!("-f x11grab -framerate 30 -video_size {}x{} -i :0.0+{},{} -y output.mkv", crop.width, crop.height, crop.x_offset, crop.y_offset);
+                command.args(com.split(" "));
+            }
+            None => {
+                command.args("-f x11grab -framerate 30 -y output.mp4".split(" "));
+            }
+        }
+    }
+
 }

@@ -1,9 +1,10 @@
 #![windows_subsystem = "windows"]
 
+use std::env;
 use anyhow::Context;
-use druid::{AppLauncher, Menu, Screen, WidgetExt, WindowDesc, MenuItem, HasRawWindowHandle, LensExt};
+use druid::{AppLauncher, Menu, Screen, WidgetExt, WindowDesc, MenuItem};
 use druid::piet::{Color, RenderContext};
-use druid::widget::{Button, Flex, Widget, MainAxisAlignment, Padding};
+use druid::widget::{Button, Flex, Widget, MainAxisAlignment};
 use druid::{Data, Env, EventCtx, Point, Rect, Lens, Event, LifeCycle, LifeCycleCtx, UpdateCtx, LayoutCtx, BoxConstraints, Size, Application};
 use druid::kurbo::{Line};
 
@@ -58,6 +59,7 @@ pub struct AppData {
     shapes: Vec<Shapes>,
     selected_shape: ShapeType, // Currently selected shape type
     selected_color: Color, // Currently selected color
+    current_background_color: Color,
 }
 
 pub struct DrawingOverlay;
@@ -253,10 +255,20 @@ impl Widget<AppData> for DrawingOverlay {
 }
 
 pub fn main() -> anyhow::Result<()> {
-    let (width, height, x, y) = compute_window_size(0)?;
+    let args: Vec<String> = env::args().collect();
+
+    if args.len() < 2 {
+        eprintln!("Errore: nessun argomento passato. Specifica un numero intero positivo >= 1.");
+        return Ok(());
+    }
+
+    let index = args[1].parse::<usize>().context("Errore: l'argomento passato non è un numero intero positivo.")?;
+
+    let (width, height, x, y) = compute_window_size(index)?;
 
     let main_window = WindowDesc::new(build_root_widget())
         .title("Draw Shapes")
+        .set_always_on_top(true)
         .transparent(true)
         .show_titlebar(false)
         .window_size(Size::new(width, height))
@@ -271,6 +283,7 @@ pub fn main() -> anyhow::Result<()> {
         shapes: Vec::new(),
         selected_shape: ShapeType::Rectangle,
         selected_color: Color::BLACK,
+        current_background_color: Color::rgba8(0xff, 0xff, 0xff, 0x00),
     };
 
     AppLauncher::with_window(main_window)
@@ -287,11 +300,13 @@ fn build_root_widget() -> impl Widget<AppData> {
 
     let draw_button = Button::new("✎").on_click(|_ctx, _data: &mut AppData, _env| {
         _data.overlay_state = OverlayState::Drawing;
+        _data.current_background_color = Color::rgba8(0xff, 0xff, 0xff, 0x4);
         _ctx.request_paint();
     });
 
     let view_button = Button::new("👁️").on_click(|_ctx, _data: &mut AppData, _env| {
         _data.overlay_state = OverlayState::View;
+        _data.current_background_color = Color::rgba8(0xff, 0xff, 0xff, 0x00);
         _ctx.request_paint();
     });
 
@@ -364,19 +379,20 @@ fn build_root_widget() -> impl Widget<AppData> {
         .with_flex_spacer(1.0) // Spazio flessibile a destra
         .main_axis_alignment(MainAxisAlignment::Center) // Centra i widget lungo l'asse principale
         .must_fill_main_axis(true)
-        .background(Color::WHITE);
+        .padding(10.0)
+        .background(Color::TRANSPARENT);
 
     Flex::column()
-        .with_child(Padding::new((0.0, 10.0), controls))
+        .with_child(controls)
         .with_flex_child(DrawingOverlay::new(), 10.0)
 }
 
 pub fn compute_window_size(index: usize) -> anyhow::Result<(f64, f64, f64, f64)> {
     let screens = Screen::get_monitors();
     println!("{:?}", screens);
-    let width = screens.to_vec()[index].virtual_rect().width();
-    let height = screens.to_vec()[index].virtual_rect().height();
-    let top_x = screens.to_vec()[index].virtual_rect().x0;
-    let top_y = screens.to_vec()[index].virtual_work_rect().y0;
+    let width = screens.to_vec()[index-1].virtual_rect().width();
+    let height = screens.to_vec()[index-1].virtual_rect().height();
+    let top_x = screens.to_vec()[index-1].virtual_rect().x0;
+    let top_y = screens.to_vec()[index-1].virtual_work_rect().y0;
     Ok((width, height-0.5, top_x, top_y+0.5))
 }

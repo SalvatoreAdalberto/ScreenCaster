@@ -7,9 +7,12 @@ use std::sync::{Arc, Mutex};
 use local_ip_address::local_ip;
 
 use std::collections::HashMap;
+use std::fs::File;
 use ffmpeg_sidecar::command::FfmpegCommand;
 use ffmpeg_sidecar::child::FfmpegChild;
 use std::io::{Read, Write, BufReader};
+use crate::gui::ShareMode;
+use crate::utils;
 
 const BUFFER_SIZE: usize = 1024;
 struct Client{
@@ -21,6 +24,14 @@ pub struct StreamingServer {
     list_clients: Arc<Mutex<HashMap<String, Client>>>,
 }
 
+#[derive(Debug)]
+pub struct CropArea {
+    pub width: u32,
+    pub height: u32,
+    pub x_offset: u32,
+    pub y_offset: u32,
+}
+
 impl StreamingServer {
     pub fn new() -> Self {
         StreamingServer {
@@ -29,7 +40,40 @@ impl StreamingServer {
         }
     }
 
-    pub fn start(&mut self) {
+    pub fn start(&mut self, screen_index: usize, share_mode: ShareMode) {
+
+        let mut command = "".to_string();
+
+        if share_mode == ShareMode::CropArea {
+            let exe_path = utils::get_project_src_path();
+            let mut file_path = "".to_string();
+            file_path = exe_path.display().to_string() + r"/config/crop.txt";
+
+            let mut file = File::open(file_path).expect("Impossibile aprire il file");
+            let mut content = String::new();
+            file.read_to_string(&mut content).expect("Impossibile leggere il file");
+
+            let fields: Vec<u32> = content
+                .split(',')
+                .map(|s| s.trim().parse::<f64>()) // Parse each field as f64
+                .map(|res| res.map(|num| num.round() as u32)) // Round to nearest integer and convert to u32
+                .collect::<Result<_, _>>().unwrap(); // Collect into Vec<u32>, propagating any errors
+            println!("{:?}", fields);
+
+            let crop = CropArea {
+                width: fields[2],
+                height: fields[3],
+                x_offset: fields[0],
+                y_offset: fields[1],
+            };
+
+            command = utils::get_ffmpeg_command(screen_index, Some(crop));
+
+        }
+        else {
+            command = utils::get_ffmpeg_command(screen_index, None);
+        }
+
         let ip_address: String;
         match local_ip() {
             Ok(ip) => ip_address = ip.to_string(),
@@ -42,21 +86,7 @@ impl StreamingServer {
         let socket = Arc::new(UdpSocket::bind(format!("{ip_address}:8080")).expect("Failed to bind socket"));  // Il client bind sulla porta 8080
         let listener_socket = socket.clone();
 
-        let ffmpeg_command = vec![
-            "-f", "avfoundation",               // Formato input per catturare lo schermo
-            "-re",                  // Frame rate
-            "-video_size", "1280x720",             // Risoluzione dello schermo
-            "-capture_cursor", "1",         // Cattura il cursore
-            "-i", "1:",                  // Schermo da catturare
-            "-tune", "zerolatency",       // Tuning per bassa latenza
-            "-f", "mpegts",             // Formato di output raw
-            "-codec:v", "libx264",      // Codec video
-            "-preset", "slow",       // Preset di compressione
-            // "-b:v", "5M",                  // Bitrate
-            "-crf", "28",                 // Costant Rate Factor
-            "-pix_fmt", "yuv420p",       // Formato pixel
-            "pipe:1"                    // Output su stdout
-        ];
+        let ffmpeg_command = command.split(" ").collect::<Vec<&str>>();
 
         // Avvia il comando FFmpeg con ffmpeg-sidecar
         let mut ffmpeg = FfmpegCommand::new().args(&ffmpeg_command).spawn().expect("Failed to start FFmpeg");

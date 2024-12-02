@@ -8,6 +8,7 @@ use winapi::shared::winerror::WAIT_TIMEOUT;
 #[cfg(target_os = "windows")]
 use winapi::um::winbase::WAIT_OBJECT_0;
 use crate::streaming_server;
+use crate::gui::ShareMode;
 
 pub struct AppState {
     pub(crate) is_sharing: bool, // Indica se siamo nella schermata di condivisione
@@ -22,9 +23,9 @@ impl AppState {
         }
     }
 
-    pub fn start(&mut self) {
+    pub fn start(&mut self, screen_index: usize, share_mode: ShareMode) {
         if self.is_sharing {
-            self.streaming_server.start(); // Avvia la registrazione
+            self.streaming_server.start(screen_index, share_mode); // Avvia la registrazione
             println!("Registrazione avviata!");
         } else {
             println!("Non siamo nella schermata di condivisione.");
@@ -50,7 +51,7 @@ pub fn macos_event_loop(id1: Arc<Mutex<u32>>, id2: Arc<Mutex<u32>>, app_state: A
             if event.state == HotKeyState::Released {
                 let mut state = app_state.lock().unwrap();
                 if event.id == *id1.lock().unwrap() {
-                    state.start(); // Avvia la registrazione solo se siamo nella schermata di condivisione
+                    state.start(0, ShareMode::Fullscreen); // Avvia la registrazione solo se siamo nella schermata di condivisione
                 } else if event.id == *id2.lock().unwrap() {
                     state.stop(); // Ferma la registrazione
                 }

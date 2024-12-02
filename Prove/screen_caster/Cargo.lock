@@ -4544,6 +4544,7 @@ version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e381186490a3e2017a506d62b759ea8eaf4be14666b13ed53973e8ae193451b1"
 dependencies = [
+ "image 0.24.9",
  "kurbo 0.9.5",
  "unic-bidi",
 ]

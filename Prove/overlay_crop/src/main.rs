@@ -109,7 +109,15 @@ impl Widget<AppData> for DrawingOverlay {
 }
 
 pub fn main() -> anyhow::Result<()> {
-    let (width, height, x, y) = compute_window_size()?;
+    let args: Vec<String> = env::args().collect();
+    if args.len() < 2 {
+        eprintln!("Errore: nessun argomento passato. Specifica un numero intero positivo >= 1.");
+        return Ok(());
+    }
+
+    let index = args[1].parse::<usize>().context("Errore: l'argomento passato non è un numero intero positivo.")?;
+
+    let (width, height, x, y) = compute_window_size(index)?;
 
     let main_window = WindowDesc::new(DrawingOverlay::new())
         .title(LocalizedString::new("Draw Shapes"))
@@ -132,14 +140,14 @@ pub fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn compute_window_size() -> anyhow::Result<(f64, f64, f64, f64)> {
+pub fn compute_window_size(index: usize) -> anyhow::Result<(f64, f64, f64, f64)> {
     let screens = druid::Screen::get_monitors();
     println!("{:?}", screens);
-    let width = screens.to_vec()[1].virtual_rect().width();
-    let height = screens.to_vec()[1].virtual_rect().height();
-    let top_x = screens.to_vec()[1].virtual_rect().x0;
-    let top_y = screens.to_vec()[1].virtual_work_rect().y0;
-    Ok((width, height-1.0, top_x, top_y+1.0))
+    let width = screens.to_vec()[index-1].virtual_rect().width();
+    let height = screens.to_vec()[index-1].virtual_rect().height();
+    let top_x = screens.to_vec()[index-1].virtual_rect().x0;
+    let top_y = screens.to_vec()[index-1].virtual_work_rect().y0;
+    Ok((width, height-0.5, top_x, top_y+0.5))
 }
 
 fn save_point(rect: Rect, scale: Scale) {
