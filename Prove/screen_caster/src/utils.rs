@@ -150,26 +150,26 @@ pub fn get_ffmpeg_command(screen_index:usize, crop: Option<CropArea>) -> String 
 
     #[cfg(target_os = "windows")]
     {
+        let (width, height, top_x, top_y) = compute_window_size(screen_index).unwrap();
         match crop {
             Some(crop) => {
-                let com = format!("-f gdigrab -framerate 30 -offset_x {} -offset_y {} -video_size {}x{} -show_region 1 -i desktop -c:v libx264 -f rawvideo -y output.mp4", crop.x_offset, crop.y_offset, crop.width, crop.height);
-                command.args(com.split(" "));
+                format!("-f gdigrab -framerate 30 -offset_x {} -offset_y {} -video_size {}x{} -i desktop -capture_cursor 1 -tune zerolatency -f mpegts -codec:v libx264 -preset slow -crf 28 -pix_fmt yuv420p pipe:1", crop.x_offset, crop.y_offset, crop.width, crop.height)
             }
             None => {
-                command.args("-f gdigrab -framerate 30 -i desktop -c:v libx264 -f rawvideo -y output.mp4".split(" "));
+                format!("-f gdigrab -framerate 30 -offset_x {} -offset_y {} -video_size {}x{} -i desktop -capture_cursor 1 -tune zerolatency -f mpegts -codec:v libx264 -preset slow -crf 28 -pix_fmt yuv420p pipe:1", top_x, top_y-0.5, width, height+0.5)
             }
         }
     }
 
     #[cfg(target_os = "linux")]
     {
+        let (width, height, top_x, top_y) = compute_window_size(screen_index).unwrap();
         match crop {
             Some(crop) => {
-                let com = format!("-f x11grab -framerate 30 -video_size {}x{} -i :0.0+{},{} -y output.mkv", crop.width, crop.height, crop.x_offset, crop.y_offset);
-                command.args(com.split(" "));
+                format!("ffmpeg -f x11grab -framerate 30 -video_size {}x{} -i :0.0+{},{} -draw_mouse 1 -tune zerolatency -f mpegts -codec:v libx264 -preset faster -crf 28 -pix_fmt yuv420p pipe:1", crop.width, crop.height, crop.x_offset, crop.y_offset)
             }
             None => {
-                command.args("-f x11grab -framerate 30 -y output.mp4".split(" "));
+                format!("ffmpeg -f x11grab -framerate 30 -video_size {}x{} -i :0.0+{},{} -draw_mouse 1 -tune zerolatency -f mpegts -codec:v libx264 -preset faster -crf 28 -pix_fmt yuv420p pipe:1", width, height+0.5, top_x, top_y-0.5)
             }
         }
     }

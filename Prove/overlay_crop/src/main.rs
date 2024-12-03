@@ -42,7 +42,7 @@ impl Widget<AppData> for DrawingOverlay {
                 if let (Some(start), Some(end)) = (data.start_point, data.end_point) {
                     let mut x = start;
                     let mut y = end;
-                    #[cfg(target_os = "windows")]
+                    #[cfg(any(target_os = "windows", target_os = "linux"))]
                     {
                         x = ctx.to_screen(start);
                         y = ctx.to_screen(end);
