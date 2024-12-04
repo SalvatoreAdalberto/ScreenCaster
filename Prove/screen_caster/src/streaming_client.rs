@@ -15,7 +15,6 @@ use std::io::{Read, Write, BufWriter};
 use std::io::ErrorKind;
 use chrono::Local;
 use std::time::Duration;
-use nix::unistd::Pid;
 use crate::workers;
 
 use iced::{ Subscription, time as iced_time, Command, Element, Length};
@@ -43,7 +42,7 @@ pub struct StreamingClient {
     receiver_image: Option<Receiver<Handle>>,
     is_recording: Option<Arc<Mutex<bool>>>,
     rx_record: Option<CrossbeamReceiver<Vec<u8>>>,
-    pid_record: Option<Pid>,
+    pid_record: Option<i32>,
     stdin_record: Option<Arc<Mutex<ChildStdin>>>,
     target_address: String,
     own_ip: String,
@@ -267,7 +266,7 @@ impl StreamingClient {
                 });
                 let stdin_mutex = Arc::new(Mutex::new(ffmpeg_command_record.take_stdin().unwrap()));
                 let stdin_mutex_clone = stdin_mutex.clone();
-                self.pid_record = Some(Pid::from_raw(ffmpeg_command_record.as_inner_mut().id() as i32));
+                self.pid_record = Some(ffmpeg_command_record.as_inner().id() as i32);
                 let rx_record_clone = self.rx_record.as_ref().unwrap().clone();
                 thread::spawn( || {
                     StreamingClient::feed_record_raw(stdin_mutex_clone, rx_record_clone);
