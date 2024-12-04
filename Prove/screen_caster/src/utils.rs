@@ -1,6 +1,6 @@
-use ipnetwork::IpNetwork;
-use if_addrs::{get_if_addrs, IfAddr};
-use std::net::{Ipv4Addr, IpAddr};
+use std::net::Ipv4Addr;
+use ipnet::Ipv4Net;
+use ipconfig::{get_adapters, OperStatus};
 use std::io::BufRead;
 use std::env;
 use std::path::PathBuf;
@@ -18,82 +18,40 @@ use crate::streaming_server::CropArea;
 pub const STREAMERS_LIST_PATH : &str = "../config/streamers_list.txt";
 
 pub fn is_ip_in_lan(ip_to_check: &str) -> bool {
-    let target_ip: Ipv4Addr = match ip_to_check.parse() {
-        Ok(ip) => {
-            println!("[DEBUG] IP di destinazione valido: {}", ip);
-            ip
-        }
-        Err(_) => {
-            eprintln!("[ERROR] Indirizzo IP non valido: {}", ip_to_check);
-            return false;
-        }
-    };
+    let target_ip: Ipv4Addr = ip_to_check.parse().expect("Indirizzo IP non valido");
 
-    let interfaces = match get_if_addrs() {
-        Ok(ifaces) => {
-            println!("[DEBUG] Interfacce di rete ottenute con successo.");
-            ifaces
-        }
-        Err(e) => {
-            eprintln!("[ERROR] Impossibile ottenere le interfacce di rete: {}", e);
-            return false;
-        }
-    };
+    // Ottieni gli adattatori di rete
+    let adapters = get_adapters().expect("Impossibile ottenere gli adattatori di rete");
 
-    for iface in interfaces {
-        println!("[DEBUG] Esaminando interfaccia: {}", iface.name);
+    for adapter in adapters {
+        if adapter.oper_status() == OperStatus::IfOperStatusUp {
+            if let Some(ipv4) = adapter.ip_addresses().iter().find_map(|addr| match addr {
+                std::net::IpAddr::V4(ip) => Some(ip),
+                _ => None,
+            }) {
+                // Ottieni il gateway predefinito
+                if let Some(gateway) = adapter.gateways().into_iter().next() {
+                    if let std::net::IpAddr::V4(gateway_ip) = gateway {
+                        println!("[DEBUG] Gateway: {}", gateway_ip);
 
-        if let IfAddr::V4(if_v4) = iface.addr {
-            let local_ip = if_v4.ip;
-            let netmask = if_v4.netmask;
+                        // Ricostruisci una subnet approssimativa
+                        let subnet = Ipv4Net::new(*gateway_ip, 24).expect("Subnet non valida");
 
-            println!(
-                "[DEBUG] Interfaccia {}: IP locale: {}, Netmask: {}",
-                iface.name, local_ip, netmask
-            );
+                        println!(
+                            "[DEBUG] Controllo se {} appartiene alla subnet {}",
+                            target_ip, subnet
+                        );
 
-            let network = calculate_subnet_range(local_ip, netmask);
-            println!(
-                "[DEBUG] Subnet range calcolato: {} - {}",
-                network.0, network.1
-            );
-
-            if network.0 <= target_ip && target_ip <= network.1 {
-                println!(
-                    "[DEBUG] L'indirizzo IP {} appartiene alla subnet di {} con netmask {}.",
-                    target_ip, local_ip, netmask
-                );
-                return true;
-            } else {
-                println!(
-                    "[DEBUG] L'indirizzo IP {} NON appartiene alla subnet di {} con netmask {}.",
-                    target_ip, local_ip, netmask
-                );
+                        if subnet.contains(&target_ip) {
+                            return true;
+                        }
+                    }
+                }
             }
-        } else {
-            println!(
-                "[DEBUG] L'interfaccia {} non è un indirizzo IPv4, ignorato.",
-                iface.name
-            );
         }
     }
 
-    println!(
-        "[DEBUG] Nessuna corrispondenza trovata per l'indirizzo IP: {}",
-        target_ip
-    );
     false
-}
-
-/// Calcola il range della subnet data l'IP e la netmask
-fn calculate_subnet_range(ip: Ipv4Addr, netmask: Ipv4Addr) -> (Ipv4Addr, Ipv4Addr) {
-    let ip_u32 = u32::from(ip);
-    let mask_u32 = u32::from(netmask);
-
-    let network_start = ip_u32 & mask_u32;
-    let broadcast = network_start | !mask_u32;
-
-    (Ipv4Addr::from(network_start), Ipv4Addr::from(broadcast))
 }
 
 
