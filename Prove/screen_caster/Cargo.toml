@@ -22,3 +22,5 @@ local-ip-address= "*"
 image =  "*"
 tokio = { version = "1.40", features = ["full"] }
 winapi = "0.3.9"
+ipnet = "*"
+ipconfig = "*"

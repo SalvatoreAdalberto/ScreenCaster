@@ -1,6 +1,12 @@
-use std::net::Ipv4Addr;
+//use std::net::Ipv4Addr;
 use ipnet::Ipv4Net;
 use ipconfig::{get_adapters, OperStatus};
+use ipnetwork::IpNetwork;
+//use if_addrs::get_if_addrs;
+
+use std::net::{Ipv4Addr, IpAddr};
+use if_addrs::{get_if_addrs, IfAddr};
+
 use std::io::BufRead;
 use std::env;
 use std::path::PathBuf;
@@ -19,6 +25,55 @@ pub const STREAMERS_LIST_PATH : &str = "../config/streamers_list.txt";
 
 pub fn is_ip_in_lan(ip_to_check: &str) -> bool {
     let target_ip: Ipv4Addr = ip_to_check.parse().expect("Indirizzo IP non valido");
+
+    let interfaces = match get_if_addrs() {
+        Ok(ifaces) => {
+            println!("[DEBUG] Interfacce di rete ottenute con successo.");
+            ifaces
+        }
+        Err(e) => {
+            eprintln!("[ERROR] Impossibile ottenere le interfacce di rete: {}", e);
+            return false;
+        }
+    };
+
+    for iface in interfaces {
+        println!("[DEBUG] Esaminando interfaccia: {}", iface.name);
+
+        if let IfAddr::V4(if_v4) = iface.addr {
+            let local_ip = if_v4.ip;
+            let netmask = if_v4.netmask;
+
+            println!(
+                "[DEBUG] Interfaccia {}: IP locale: {}, Netmask: {}",
+                iface.name, local_ip, netmask
+            );
+
+            let network = calculate_subnet_range(local_ip, netmask);
+            println!(
+                "[DEBUG] Subnet range calcolato: {} - {}",
+                network.0, network.1
+            );
+
+            if network.0 <= target_ip && target_ip <= network.1 {
+                println!(
+                    "[DEBUG] L'indirizzo IP {} appartiene alla subnet di {} con netmask {}.",
+                    target_ip, local_ip, netmask
+                );
+                return true;
+            } else {
+                println!(
+                    "[DEBUG] L'indirizzo IP {} NON appartiene alla subnet di {} con netmask {}.",
+                    target_ip, local_ip, netmask
+                );
+            }
+        } else {
+            println!(
+                "[DEBUG] L'interfaccia {} non è un indirizzo IPv4, ignorato.",
+                iface.name
+            );
+        }
+    }
 
     // Ottieni gli adattatori di rete
     let adapters = get_adapters().expect("Impossibile ottenere gli adattatori di rete");
@@ -52,6 +107,17 @@ pub fn is_ip_in_lan(ip_to_check: &str) -> bool {
     }
 
     false
+}
+
+
+fn calculate_subnet_range(ip: Ipv4Addr, netmask: Ipv4Addr) -> (Ipv4Addr, Ipv4Addr) {
+    let ip_u32 = u32::from(ip);
+    let mask_u32 = u32::from(netmask);
+
+    let network_start = ip_u32 & mask_u32;
+    let broadcast = network_start | !mask_u32;
+
+    (Ipv4Addr::from(network_start), Ipv4Addr::from(broadcast))
 }
 
 
@@ -172,7 +238,7 @@ pub fn get_ffmpeg_command(screen_index:usize, crop: Option<CropArea>) -> String 
                 format!("-f gdigrab -framerate 30 -offset_x {} -offset_y {} -video_size {}x{} -i desktop -capture_cursor 1 -tune zerolatency -f mpegts -codec:v libx264 -preset slow -crf 28 -pix_fmt yuv420p pipe:1", crop.x_offset, crop.y_offset, crop.width, crop.height)
             }
             None => {
-                format!("-f gdigrab -framerate 30 -i desktop -capture_cursor 1 -f mpegts pipe:1")
+                format!("-f gdigrab -framerate 30 -i desktop -capture_cursor 1 -f mpegts")
             }
         }
     }
