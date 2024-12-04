@@ -61,7 +61,7 @@ pub fn macos_event_loop(id1: Arc<Mutex<u32>>, id2: Arc<Mutex<u32>>, app_state: A
 }
 
 #[cfg(target_os = "linux")]
-pub fn linux_event_loop(id1: u32, id2: u32, app_state: Arc<Mutex<AppState>>, running: Arc<Mutex<bool>>) {
+pub fn linux_event_loop(id1: Arc<Mutex<u32>>, id2: Arc<Mutex<u32>>, app_state: Arc<Mutex<AppState>>, running: Arc<Mutex<bool>>) {
     loop {
         if !*running.lock().unwrap() {
             break;
@@ -70,9 +70,9 @@ pub fn linux_event_loop(id1: u32, id2: u32, app_state: Arc<Mutex<AppState>>, run
         if let Ok(event) = GlobalHotKeyEvent::receiver().try_recv() {
             let mut state = app_state.lock().unwrap();
             if event.state == HotKeyState::Released {
-                if event.id == id1 {
-                    state.start(); // Avvia la registrazione solo se siamo nella schermata di condivisione
-                } else if event.id == id2 {
+                if event.id == *id1.lock().unwrap() {
+                    state.start(0, ShareMode::Fullscreen); // Avvia la registrazione solo se siamo nella schermata di condivisione
+                } else if event.id == *id2.lock().unwrap() {
                     state.stop(); // Ferma la registrazione
                 }
             }
@@ -81,7 +81,7 @@ pub fn linux_event_loop(id1: u32, id2: u32, app_state: Arc<Mutex<AppState>>, run
 }
 
 #[cfg(target_os = "windows")]
-pub fn windows_event_loop(id1: u32, id2: u32, app_state: Arc<Mutex<AppState>>, running: Arc<Mutex<bool>>) {
+pub fn windows_event_loop(id1: Arc<Mutex<u32>>, id2: Arc<Mutex<u32>>, app_state: Arc<Mutex<AppState>>, running: Arc<Mutex<bool>>) {
     unsafe {
         let mut msg: MSG = std::mem::zeroed();
         loop {
@@ -90,11 +90,11 @@ pub fn windows_event_loop(id1: u32, id2: u32, app_state: Arc<Mutex<AppState>>, r
             }
 
             if let Ok(event) = GlobalHotKeyEvent::receiver().try_recv() {
-                let state = app_state.lock().unwrap();
+                let mut state = app_state.lock().unwrap();
                 if event.state == HotKeyState::Released {
-                    if event.id == id1 {
-                        state.start(); // Avvia la registrazione solo se siamo nella schermata di condivisione
-                    } else if event.id == id2 {
+                    if event.id == *id1.lock().unwrap() {
+                        state.start(0, ShareMode::Fullscreen); // Avvia la registrazione solo se siamo nella schermata di condivisione
+                    } else if event.id == *id2.lock().unwrap() {
                         state.stop(); // Ferma la registrazione
                     }
                 }

@@ -74,6 +74,8 @@ impl StreamingServer {
             command = utils::get_ffmpeg_command(screen_index, None);
         }
 
+        println!("{:?}", command);
+
         let ip_address: String;
         match local_ip() {
             Ok(ip) => ip_address = ip.to_string(),

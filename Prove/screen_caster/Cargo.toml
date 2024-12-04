@@ -1,5 +1,5 @@
 [package]
-name = "screen_capture_marco"
+name = "screen_caster"
 version = "0.1.0"
 edition = "2021"
 
@@ -8,18 +8,17 @@ ffmpeg-sidecar = "1.1.0"
 anyhow = "1.0.86"
 iced = { version = "0.10.0", features = ["wgpu", "image", "async-std", "advanced"] }
 winit = "0.30.5"
-winapi = "0.3.9"
 global-hotkey = "0.6.2"
 druid = { version = "0.8.3", features = ["svg", "image"] }
 eframe = { version = "0.28.1", features = ["default", "wgpu", "__screenshot"] }
 egui = "*"
 ipnetwork = "*"
-pnet = "*"
+if-addrs = "0.6.4"
 gif = "0.13.1"
 chrono = "*"
 crossbeam-channel = "*"
 crossbeam-utils = "*"
 local-ip-address= "*"
-nix = "*"
 image =  "*"
 tokio = { version = "1.40", features = ["full"] }
+winapi = "0.3.9"

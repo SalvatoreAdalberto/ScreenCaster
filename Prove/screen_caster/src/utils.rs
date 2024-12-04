@@ -1,5 +1,6 @@
 use ipnetwork::IpNetwork;
-use pnet::datalink;
+use if_addrs::{get_if_addrs, IfAddr};
+use std::net::{Ipv4Addr, IpAddr};
 use std::io::BufRead;
 use std::env;
 use std::path::PathBuf;
@@ -17,27 +18,84 @@ use crate::streaming_server::CropArea;
 pub const STREAMERS_LIST_PATH : &str = "../config/streamers_list.txt";
 
 pub fn is_ip_in_lan(ip_to_check: &str) -> bool {
-    // Converti l'indirizzo target in un oggetto IPv4
-    let target_ip: std::net::Ipv4Addr = ip_to_check
-        .parse()
-        .expect("Indirizzo IP non valido");
+    let target_ip: Ipv4Addr = match ip_to_check.parse() {
+        Ok(ip) => {
+            println!("[DEBUG] IP di destinazione valido: {}", ip);
+            ip
+        }
+        Err(_) => {
+            eprintln!("[ERROR] Indirizzo IP non valido: {}", ip_to_check);
+            return false;
+        }
+    };
 
-    // Ottieni le interfacce di rete
-    let interfaces = datalink::interfaces();
+    let interfaces = match get_if_addrs() {
+        Ok(ifaces) => {
+            println!("[DEBUG] Interfacce di rete ottenute con successo.");
+            ifaces
+        }
+        Err(e) => {
+            eprintln!("[ERROR] Impossibile ottenere le interfacce di rete: {}", e);
+            return false;
+        }
+    };
 
-    for interface in interfaces {
-        for ip in interface.ips {
-            // Controlla solo gli indirizzi IPv4
-            if let IpNetwork::V4(network) = ip {
-                if network.contains(target_ip) {
-                    return true; // L'indirizzo appartiene alla subnet
-                }
+    for iface in interfaces {
+        println!("[DEBUG] Esaminando interfaccia: {}", iface.name);
+
+        if let IfAddr::V4(if_v4) = iface.addr {
+            let local_ip = if_v4.ip;
+            let netmask = if_v4.netmask;
+
+            println!(
+                "[DEBUG] Interfaccia {}: IP locale: {}, Netmask: {}",
+                iface.name, local_ip, netmask
+            );
+
+            let network = calculate_subnet_range(local_ip, netmask);
+            println!(
+                "[DEBUG] Subnet range calcolato: {} - {}",
+                network.0, network.1
+            );
+
+            if network.0 <= target_ip && target_ip <= network.1 {
+                println!(
+                    "[DEBUG] L'indirizzo IP {} appartiene alla subnet di {} con netmask {}.",
+                    target_ip, local_ip, netmask
+                );
+                return true;
+            } else {
+                println!(
+                    "[DEBUG] L'indirizzo IP {} NON appartiene alla subnet di {} con netmask {}.",
+                    target_ip, local_ip, netmask
+                );
             }
+        } else {
+            println!(
+                "[DEBUG] L'interfaccia {} non è un indirizzo IPv4, ignorato.",
+                iface.name
+            );
         }
     }
 
-    false // Nessuna corrispondenza trovata
+    println!(
+        "[DEBUG] Nessuna corrispondenza trovata per l'indirizzo IP: {}",
+        target_ip
+    );
+    false
 }
+
+/// Calcola il range della subnet data l'IP e la netmask
+fn calculate_subnet_range(ip: Ipv4Addr, netmask: Ipv4Addr) -> (Ipv4Addr, Ipv4Addr) {
+    let ip_u32 = u32::from(ip);
+    let mask_u32 = u32::from(netmask);
+
+    let network_start = ip_u32 & mask_u32;
+    let broadcast = network_start | !mask_u32;
+
+    (Ipv4Addr::from(network_start), Ipv4Addr::from(broadcast))
+}
+
 
 pub fn get_streamers_map() -> std::collections::HashMap<String, String> {
     let mut streamers_map = std::collections::HashMap::new();
@@ -121,10 +179,10 @@ fn ffmpeg_download_url_custom() -> Result<&'static str, &'static str> {
 pub fn compute_window_size(index: usize) -> anyhow::Result<(f64, f64, f64, f64)> {
     let screens = Screen::get_monitors();
     println!("{:?}", screens);
-    let width = screens.to_vec()[index].virtual_rect().width();
-    let height = screens.to_vec()[index].virtual_rect().height();
-    let top_x = screens.to_vec()[index].virtual_rect().x0;
-    let top_y = screens.to_vec()[index].virtual_work_rect().y0;
+    let width = screens.to_vec()[index-1].virtual_rect().width();
+    let height = screens.to_vec()[index-1].virtual_rect().height();
+    let top_x = screens.to_vec()[index-1].virtual_rect().x0;
+    let top_y = screens.to_vec()[index-1].virtual_work_rect().y0;
     Ok((width, height-0.5, top_x, top_y+0.5))
 }
 
@@ -156,7 +214,7 @@ pub fn get_ffmpeg_command(screen_index:usize, crop: Option<CropArea>) -> String 
                 format!("-f gdigrab -framerate 30 -offset_x {} -offset_y {} -video_size {}x{} -i desktop -capture_cursor 1 -tune zerolatency -f mpegts -codec:v libx264 -preset slow -crf 28 -pix_fmt yuv420p pipe:1", crop.x_offset, crop.y_offset, crop.width, crop.height)
             }
             None => {
-                format!("-f gdigrab -framerate 30 -offset_x {} -offset_y {} -video_size {}x{} -i desktop -capture_cursor 1 -tune zerolatency -f mpegts -codec:v libx264 -preset slow -crf 28 -pix_fmt yuv420p pipe:1", top_x, top_y-0.5, width, height+0.5)
+                format!("-f gdigrab -framerate 30 -i desktop -capture_cursor 1 -f mpegts pipe:1")
             }
         }
     }
