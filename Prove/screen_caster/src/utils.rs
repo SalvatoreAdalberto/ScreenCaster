@@ -1,5 +1,8 @@
 //use std::net::Ipv4Addr;
 use ipnet::Ipv4Net;
+#[cfg(not(target_os = "windows"))]
+use pnet::datalink;
+#[cfg(target_os = "windows")]
 use ipconfig::{get_adapters, OperStatus};
 use ipnetwork::IpNetwork;
 //use if_addrs::get_if_addrs;
@@ -26,86 +29,105 @@ pub const STREAMERS_LIST_PATH : &str = "../config/streamers_list.txt";
 pub fn is_ip_in_lan(ip_to_check: &str) -> bool {
     let target_ip: Ipv4Addr = ip_to_check.parse().expect("Indirizzo IP non valido");
 
-    let interfaces = match get_if_addrs() {
-        Ok(ifaces) => {
-            println!("[DEBUG] Interfacce di rete ottenute con successo.");
-            ifaces
-        }
-        Err(e) => {
-            eprintln!("[ERROR] Impossibile ottenere le interfacce di rete: {}", e);
-            return false;
-        }
-    };
+    #[cfg(not(target_os = "windows"))]
+    {
+        // Ottieni le interfacce di rete
+        let interfaces = datalink::interfaces();
 
-    for iface in interfaces {
-        println!("[DEBUG] Esaminando interfaccia: {}", iface.name);
-
-        if let IfAddr::V4(if_v4) = iface.addr {
-            let local_ip = if_v4.ip;
-            let netmask = if_v4.netmask;
-
-            println!(
-                "[DEBUG] Interfaccia {}: IP locale: {}, Netmask: {}",
-                iface.name, local_ip, netmask
-            );
-
-            let network = calculate_subnet_range(local_ip, netmask);
-            println!(
-                "[DEBUG] Subnet range calcolato: {} - {}",
-                network.0, network.1
-            );
-
-            if network.0 <= target_ip && target_ip <= network.1 {
-                println!(
-                    "[DEBUG] L'indirizzo IP {} appartiene alla subnet di {} con netmask {}.",
-                    target_ip, local_ip, netmask
-                );
-                return true;
-            } else {
-                println!(
-                    "[DEBUG] L'indirizzo IP {} NON appartiene alla subnet di {} con netmask {}.",
-                    target_ip, local_ip, netmask
-                );
-            }
-        } else {
-            println!(
-                "[DEBUG] L'interfaccia {} non è un indirizzo IPv4, ignorato.",
-                iface.name
-            );
-        }
-    }
-
-    // Ottieni gli adattatori di rete
-    let adapters = get_adapters().expect("Impossibile ottenere gli adattatori di rete");
-
-    for adapter in adapters {
-        if adapter.oper_status() == OperStatus::IfOperStatusUp {
-            if let Some(ipv4) = adapter.ip_addresses().iter().find_map(|addr| match addr {
-                std::net::IpAddr::V4(ip) => Some(ip),
-                _ => None,
-            }) {
-                // Ottieni il gateway predefinito
-                if let Some(gateway) = adapter.gateways().into_iter().next() {
-                    if let std::net::IpAddr::V4(gateway_ip) = gateway {
-                        println!("[DEBUG] Gateway: {}", gateway_ip);
-
-                        // Ricostruisci una subnet approssimativa
-                        let subnet = Ipv4Net::new(*gateway_ip, 24).expect("Subnet non valida");
-
-                        println!(
-                            "[DEBUG] Controllo se {} appartiene alla subnet {}",
-                            target_ip, subnet
-                        );
-
-                        if subnet.contains(&target_ip) {
-                            return true;
-                        }
+        for interface in interfaces {
+            for ip in interface.ips {
+                // Controlla solo gli indirizzi IPv4
+                if let IpNetwork::V4(network) = ip {
+                    if network.contains(target_ip) {
+                        return true; // L'indirizzo appartiene alla subnet
                     }
                 }
             }
         }
     }
 
+    #[cfg(target_os = "windows")]
+    {
+        let interfaces = match get_if_addrs() {
+            Ok(ifaces) => {
+                println!("[DEBUG] Interfacce di rete ottenute con successo.");
+                ifaces
+            }
+            Err(e) => {
+                eprintln!("[ERROR] Impossibile ottenere le interfacce di rete: {}", e);
+                return false;
+            }
+        };
+
+        for iface in interfaces {
+            println!("[DEBUG] Esaminando interfaccia: {}", iface.name);
+
+            if let IfAddr::V4(if_v4) = iface.addr {
+                let local_ip = if_v4.ip;
+                let netmask = if_v4.netmask;
+
+                println!(
+                    "[DEBUG] Interfaccia {}: IP locale: {}, Netmask: {}",
+                    iface.name, local_ip, netmask
+                );
+
+                let network = calculate_subnet_range(local_ip, netmask);
+                println!(
+                    "[DEBUG] Subnet range calcolato: {} - {}",
+                    network.0, network.1
+                );
+
+                if network.0 <= target_ip && target_ip <= network.1 {
+                    println!(
+                        "[DEBUG] L'indirizzo IP {} appartiene alla subnet di {} con netmask {}.",
+                        target_ip, local_ip, netmask
+                    );
+                    return true;
+                } else {
+                    println!(
+                        "[DEBUG] L'indirizzo IP {} NON appartiene alla subnet di {} con netmask {}.",
+                        target_ip, local_ip, netmask
+                    );
+                }
+            } else {
+                println!(
+                    "[DEBUG] L'interfaccia {} non è un indirizzo IPv4, ignorato.",
+                    iface.name
+                );
+            }
+        }
+
+        // Ottieni gli adattatori di rete
+        let adapters = get_adapters().expect("Impossibile ottenere gli adattatori di rete");
+
+        for adapter in adapters {
+            if adapter.oper_status() == OperStatus::IfOperStatusUp {
+                if let Some(ipv4) = adapter.ip_addresses().iter().find_map(|addr| match addr {
+                    std::net::IpAddr::V4(ip) => Some(ip),
+                    _ => None,
+                }) {
+                    // Ottieni il gateway predefinito
+                    if let Some(gateway) = adapter.gateways().into_iter().next() {
+                        if let std::net::IpAddr::V4(gateway_ip) = gateway {
+                            println!("[DEBUG] Gateway: {}", gateway_ip);
+
+                            // Ricostruisci una subnet approssimativa
+                            let subnet = Ipv4Net::new(*gateway_ip, 24).expect("Subnet non valida");
+
+                            println!(
+                                "[DEBUG] Controllo se {} appartiene alla subnet {}",
+                                target_ip, subnet
+                            );
+
+                            if subnet.contains(&target_ip) {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
     false
 }
 
