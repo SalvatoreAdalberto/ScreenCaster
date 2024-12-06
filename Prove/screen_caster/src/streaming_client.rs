@@ -376,7 +376,6 @@ impl StreamingClient {
                 return None;
             }
         }
-        None
     }
     
     pub fn view_video(&self) -> Element<VideoPlayerMessage>{

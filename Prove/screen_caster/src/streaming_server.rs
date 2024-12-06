@@ -2,7 +2,7 @@ use std::net::UdpSocket;
 
 use std::sync::mpsc::channel;
 use std::thread;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 
 use local_ip_address::local_ip;
 
@@ -11,6 +11,7 @@ use std::fs::File;
 use ffmpeg_sidecar::command::FfmpegCommand;
 use ffmpeg_sidecar::child::FfmpegChild;
 use std::io::{Read, Write, BufReader};
+use std::time::Duration;
 use crate::gui::ShareMode;
 use crate::utils;
 
@@ -22,6 +23,7 @@ struct Client{
 pub struct StreamingServer {
     handle: Option<Mutex<FfmpegChild>>,
     list_clients: Arc<Mutex<HashMap<String, Client>>>,
+    control: Arc<(Mutex<bool>, Condvar)>, // Aggiunta per controllare la terminazione
 }
 
 #[derive(Debug)]
@@ -37,10 +39,18 @@ impl StreamingServer {
         StreamingServer {
             handle: None,
             list_clients: Arc::new(Mutex::new(HashMap::new())),
+            control: Arc::new((Mutex::new(false), Condvar::new())), // Inizializzazione
         }
     }
 
     pub fn start(&mut self, screen_index: usize, share_mode: ShareMode) {
+
+        {
+            let (lock, cvar) = &*self.control;
+            let mut terminate = lock.lock().unwrap();
+            *terminate = false;
+            cvar.notify_all(); // Notifica tutti i thread
+        }
 
         let mut command = "".to_string();
 
@@ -97,19 +107,31 @@ impl StreamingServer {
 
         let handle = Mutex::new(ffmpeg);
 
+        let control = Arc::clone(&self.control);
+        let control_clone = Arc::clone(&self.control);
+
         //Lista dei client connessi
         let list_tx_clients_clone = Arc::clone(&self.list_clients);
+
+        listener_socket.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
 
         //LISTENER THREAD
         thread::spawn(move || {
             let mut buffer = [0; BUFFER_SIZE];
+            let (lock, cvar) = &*control;
+
             loop{
+
+                if *lock.lock().unwrap() {
+                    println!("Terminazione del listener socket.");
+                    break;
+                }
+
                 // Ricevi il pacchetto dal client
                 let (bytes_received, client_address) = match listener_socket.recv_from(&mut buffer) {
                     Ok(res) => res,
                     Err(e) => {
-                        eprintln!("Errore durante la ricezione: {}", e);
-                        continue;
+                        continue
                     }
                 };
 
@@ -154,11 +176,20 @@ impl StreamingServer {
                     listener_socket.send_to(b"OK", &client_address).unwrap();
                 }
             }
+            println!("Listener terminato.");
+            cvar.notify_all(); // Notifica che il listener è terminato
         });
 
         let list_tx_clients_clone2 = Arc::clone(&self.list_clients);
         thread::spawn(move || {
+            let (lock, cvar) = &*control_clone;
+
             loop {
+                if *lock.lock().unwrap() {
+                    println!("Terminazione del sender thread.");
+                    break;
+                }
+
                 let n = reader.read(&mut buffer).unwrap();
                 if n == 0 {
                     break;
@@ -168,6 +199,9 @@ impl StreamingServer {
                     client.tx.send(buffer[..n].to_vec()).unwrap();
                 }
             }
+
+            println!("Sender thread terminato.");
+            cvar.notify_all(); // Notifica che il sender è terminato
         });
 
         self.handle = Some(handle);
@@ -183,6 +217,13 @@ impl StreamingServer {
             }
 
             guard.wait().expect("Failed to stop FFmpeg process");
+
+            {
+                let (lock, cvar) = &*self.control;
+                let mut terminate = lock.lock().unwrap();
+                *terminate = true;
+                cvar.notify_all(); // Notifica tutti i thread
+            }
 
             println!("Screen casting fermato!");
         } else {
