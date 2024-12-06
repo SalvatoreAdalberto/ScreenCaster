@@ -190,7 +190,7 @@ impl Application for ScreenCaster {
                     match matching.len() {
                         0 => {
                             self.ip_address = self.input_state.clone();
-                            let _ = Command::perform(async {}, |_| Message::NoMatchFound);
+                            Command::perform(async {}, |_| Message::NoMatchFound);
                         }
                         1 => {
                             self.ip_address = matching[0].clone();
@@ -225,7 +225,11 @@ impl Application for ScreenCaster {
             }
             Message::Connecting => {
                 if let Some(sc) = &mut self.streaming_client {
-                    sc.update(VideoPlayerMessage::Connect);
+                    if let Some(VideoPlayerMessage::Exit) = sc.update(VideoPlayerMessage::Connect) {
+                        self.streaming_client = None;
+                        self.state = AppStateEnum::Connect;
+                    }
+
                 }
             }
             Message::NoMatchFound => {
@@ -298,7 +302,7 @@ impl Application for ScreenCaster {
                 let mut real_path = "".to_string();
                 real_path = exe_path.display().to_string() + r"/overlay_crop/target/release/overlay_crop";
                 Command2::new(real_path)
-                    .arg("t")
+                    .arg(self.selected_screen.to_string())
                     .output()
                     .expect("Non è stato possibile avviare l'overlay crop");
             }
