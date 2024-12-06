@@ -15,7 +15,7 @@ use std::process::{ChildStdin};
 use std::io::{Read, Write, BufWriter};
 use std::io::ErrorKind;
 use chrono::Local;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use crate::workers;
 
 use iced::{ Subscription, time as iced_time, Command, Element, Length};
@@ -95,9 +95,14 @@ impl StreamingClient {
     fn start_connection(&mut self) -> Option<VideoPlayerMessage> {
         let mut buffer = [0; BUFFER_SIZE];
         let message = "START".as_bytes();
-        self.socket.set_read_timeout(Some(Duration::from_secs(10))).expect("Failed to set read timeout");
+        self.socket.set_read_timeout(Some(Duration::from_secs(1))).expect("Failed to set read timeout");
+        let start = Instant::now();
         // INIT CONNECTION
         loop {
+            if start.elapsed() > Duration::from_secs(10) {
+                eprintln!("Connection timeout");
+                return Some(VideoPlayerMessage::Exit);
+            }
             match self.socket.send_to(&message, &self.target_address) {
                 Ok(_) => {
                     match self.socket.recv(&mut buffer) {
@@ -107,15 +112,10 @@ impl StreamingClient {
                                 return None;
                             }
                         }
-                        Err(_) => {
-                            return Some(VideoPlayerMessage::Exit);
-                        }
+                        _ => {}
                     }
                 }
-                Err(err) => {
-                    eprintln!("Failed to send START message: {}", err);
-                    return Some(VideoPlayerMessage::Exit);
-                }
+                _ => {}
             }
         }
     }
