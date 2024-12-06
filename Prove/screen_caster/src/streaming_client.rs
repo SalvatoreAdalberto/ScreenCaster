@@ -5,8 +5,9 @@ use ffmpeg_sidecar::{command::FfmpegCommand, event::FfmpegEvent::OutputFrame, ev
 use std::net::UdpSocket;
 use local_ip_address::local_ip;
 
-use std::thread;
 use std::sync::{Arc, Mutex, atomic::AtomicBool, atomic::Ordering};
+use std::{io, thread};
+use std::io::{Error};
 use std::sync::mpsc::{self, Receiver, Sender};
 use crossbeam_channel::{bounded, Sender as CrossbeamSender, Receiver as CrossbeamReceiver};
 
@@ -90,27 +91,32 @@ impl StreamingClient {
         }
     }
 
-    fn start_connection(&mut self){
+    fn start_connection(&mut self) -> Option<VideoPlayerMessage> {
         let mut buffer = [0; BUFFER_SIZE];
         let message = "START".as_bytes();
         self.socket.set_read_timeout(Some(Duration::from_secs(10))).expect("Failed to set read timeout");
-        //INIT CONNECTION
-        loop{
-            self.socket.send_to(&message, &self.target_address).expect("Failed to send START message");
-            match self.socket.recv(&mut buffer) {
-                Ok(number_of_bytes) => {
-                    let data = &buffer[..number_of_bytes];
-                    if data == "OK".as_bytes() {
-                        break;
+        // INIT CONNECTION
+        loop {
+            match self.socket.send_to(&message, &self.target_address) {
+                Ok(_) => {
+                    match self.socket.recv(&mut buffer) {
+                        Ok(number_of_bytes) => {
+                            let data = &buffer[..number_of_bytes];
+                            if data == "OK".as_bytes() {
+                                return None;
+                            }
+                        }
+                        Err(_) => {
+                            return Some(VideoPlayerMessage::Exit);
+                        }
                     }
                 }
                 Err(err) => {
-                    eprintln!("Failed to receive data: {}", err);
-
-                    // GESTIRE SERVER NON DISPONIBILE
+                    eprintln!("Failed to send START message: {}", err);
+                    return Some(VideoPlayerMessage::Exit);
                 }
             }
-        }  
+        }
     }
 
     fn manage_incoming_packets(&mut self){
@@ -334,32 +340,43 @@ impl StreamingClient {
         drop(recording_guard);
     }
 
-    pub fn update(&mut self, message: VideoPlayerMessage) -> Command<VideoPlayerMessage>{
+    pub fn update(&mut self, message: VideoPlayerMessage) -> Option<VideoPlayerMessage> {
         match message{
             VideoPlayerMessage::Connect => {
-                self.start_connection();
-                self.manage_incoming_packets();
-                self.state = StreamingClientStateEnum::Connected;
+                match self.start_connection() {
+                    None => {
+                        self.manage_incoming_packets();
+                        self.state = StreamingClientStateEnum::Connected;
+                        return None;
+                    }
+                    Some(_) => {
+                        return Some(VideoPlayerMessage::Exit);
+                    }
+                }
             }
             VideoPlayerMessage::NextFrame => {
                 if let Some(image) = self.update_image(){
                     self.current_frame = image;
                 }
+                return None;
             }
             VideoPlayerMessage::Exit => {
                     if let Some(_) = self.pid_record{
                         self.stop_record();
                     }
                     self.on_exit();
+                return None;
             }
             VideoPlayerMessage::StartRecord => {
                     self.start_record();
+                return None;
             }
             VideoPlayerMessage::StopRecord => {
                     self.stop_record();
+                return None;
             }
         }
-        Command::none()
+        None
     }
     
     pub fn view_video(&self) -> Element<VideoPlayerMessage>{
@@ -393,3 +410,4 @@ impl StreamingClient {
             
     }
 }
+
