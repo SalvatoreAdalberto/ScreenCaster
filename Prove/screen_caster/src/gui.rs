@@ -48,7 +48,8 @@ pub enum AppStateEnum {
     Connect,
     ChangeHotKeys,
     Watching,
-    SelectScreen
+    SelectScreen,
+    ServerNotReady,
 }
 
 // Struttura dell'applicazione
@@ -230,7 +231,7 @@ impl Application for ScreenCaster {
                 if let Some(sc) = &mut self.streaming_client {
                     if let Some(VideoPlayerMessage::Exit) = sc.update(VideoPlayerMessage::Connect) {
                         self.streaming_client = None;
-                        self.state = AppStateEnum::Connect;
+                        self.state = AppStateEnum::ServerNotReady;
                     }
 
                 }
@@ -334,7 +335,8 @@ impl Application for ScreenCaster {
             AppStateEnum::Connect => self.view_connect(),
             AppStateEnum::ChangeHotKeys => self.view_change_hotkey(),
             AppStateEnum::Watching => self.view_watching(),
-            AppStateEnum::SelectScreen => self.view_select_screen()
+            AppStateEnum::SelectScreen => self.view_select_screen(),
+            AppStateEnum::ServerNotReady => self.view_server_not_ready(),
         }
     }
 
@@ -653,6 +655,40 @@ impl ScreenCaster {
                         Button::new(Text::new("Torna alla Home"))
                             .padding(10)
                             .width(Length::Fixed(200.0))
+                            .on_press(Message::GoBackHome),
+                    ),
+            );
+
+        Container::new(content)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center_x()
+            .center_y()
+            .into()
+    }
+
+    fn view_server_not_ready(&self) -> Element<Message> {
+        let content = Column::new()
+            .spacing(20)
+            .align_items(Alignment::Center)
+            .push(
+                Row::new()
+                    .spacing(20)
+                    .align_items(Alignment::Center)
+                    .push(Text::new("Il server non è pronto").size(30))
+            )
+            .push(
+                Row::new()
+                    .spacing(20)
+                    .align_items(Alignment::Center)
+                    .push(
+                        Button::new(Text::new("Connetti"))
+                            .padding(10)
+                            .on_press(Message::TryConnect),
+                    )
+                    .push(
+                        Button::new(Text::new("Torna alla Home"))
+                            .padding(10)
                             .on_press(Message::GoBackHome),
                     ),
             );
