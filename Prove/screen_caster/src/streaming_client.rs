@@ -17,6 +17,7 @@ use std::io::ErrorKind;
 use chrono::Local;
 use std::time::Duration;
 use crate::workers::FrameProcessorConstructor;
+
 use iced::{ Subscription, time as iced_time, Command, Element, Length};
 use iced::widget::{Button, image::Handle, image::Image, Text};
 
@@ -403,11 +404,7 @@ impl StreamingClient {
 
     pub fn subscription(&self) -> Subscription<VideoPlayerMessage>{
             match self.state{
-<<<<<<< HEAD
-                StreamingClientStateEnum::Connected => {iced_time::every(Duration::from_secs_f32(1.0/30.0 )).map(|_| VideoPlayerMessage::NextFrame)},
-=======
                 StreamingClientStateEnum::Connected => {iced_time::every(Duration::from_secs_f32(1.0/60.0 )).map(|_| VideoPlayerMessage::NextFrame)},
->>>>>>> e9cce14c (add shortcut)
                 _  => {Subscription::none()}
             }
             

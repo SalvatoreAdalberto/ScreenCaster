@@ -120,6 +120,8 @@ impl StreamingServer {
         let control_clone = Arc::clone(&self.control);
 
         //Lista dei client connessi
+        //let mut pipe = NamedPipe::new(SHARE_PIPE_NAME)?;
+        let (ready_sender, ready_receiver) = channel::<()>();
         let list_tx_clients_clone = Arc::clone(&self.list_clients);
         println!("here");
 
