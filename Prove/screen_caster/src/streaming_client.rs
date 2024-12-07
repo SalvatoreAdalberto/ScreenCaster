@@ -341,16 +341,16 @@ impl StreamingClient {
     }
 
     pub fn update(&mut self, message: VideoPlayerMessage) -> Option<VideoPlayerMessage> {
-        match message{
+        return match message {
             VideoPlayerMessage::Connect => {
                 match self.start_connection() {
                     None => {
                         self.manage_incoming_packets();
                         self.state = StreamingClientStateEnum::Connected;
-                        return None;
+                        None
                     }
                     Some(_) => {
-                        return Some(VideoPlayerMessage::Exit);
+                        Some(VideoPlayerMessage::Exit)
                     }
                 }
             }
@@ -358,22 +358,22 @@ impl StreamingClient {
                 if let Some(image) = self.update_image(){
                     self.current_frame = image;
                 }
-                return None;
+                None
             }
             VideoPlayerMessage::Exit => {
-                    if let Some(_) = self.pid_record{
-                        self.stop_record();
-                    }
-                    self.on_exit();
-                return None;
+                if let Some(_) = self.pid_record {
+                    self.stop_record();
+                }
+                self.on_exit();
+                None
             }
             VideoPlayerMessage::StartRecord => {
-                    self.start_record();
-                return None;
+                self.start_record();
+                None
             }
             VideoPlayerMessage::StopRecord => {
-                    self.stop_record();
-                return None;
+                self.stop_record();
+                None
             }
         }
     }
@@ -403,7 +403,11 @@ impl StreamingClient {
 
     pub fn subscription(&self) -> Subscription<VideoPlayerMessage>{
             match self.state{
+<<<<<<< HEAD
                 StreamingClientStateEnum::Connected => {iced_time::every(Duration::from_secs_f32(1.0/30.0 )).map(|_| VideoPlayerMessage::NextFrame)},
+=======
+                StreamingClientStateEnum::Connected => {iced_time::every(Duration::from_secs_f32(1.0/60.0 )).map(|_| VideoPlayerMessage::NextFrame)},
+>>>>>>> e9cce14c (add shortcut)
                 _  => {Subscription::none()}
             }
             

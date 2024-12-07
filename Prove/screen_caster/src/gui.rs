@@ -5,11 +5,10 @@ use std::sync::{Arc, Mutex};
 use global_hotkey::GlobalHotKeyManager;
 use global_hotkey::hotkey::{HotKey, Modifiers};
 use crate::hotkeys::{AppState, parse_key_code};
-use std::process::{Child, Command as Command2, Output};
+use std::process::{Child, Command as Command2, Output, Stdio};
 use std::collections::HashMap;
 use crate::streaming_client::{StreamingClient, VideoPlayerMessage};
 use iced::window::Event;
-use crate::screen_capture::CropArea;
 
 // Definiamo i messaggi dell'applicazione
 #[derive(Debug, Clone)]
@@ -23,6 +22,7 @@ pub enum Message {
     InputChanged(String),
     StartRecordHotkeyChanged(String),
     StopRecordHotkeyChanged(String),
+    ClearHotkeyChanged(String),
     GoToChangeHotKeys,
     SaveHotKeys,
     ToggleAnnotationMode,
@@ -48,8 +48,7 @@ pub enum AppStateEnum {
     Connect,
     ChangeHotKeys,
     Watching,
-    SelectScreen,
-    ServerNotReady,
+    SelectScreen
 }
 
 // Struttura dell'applicazione
@@ -61,18 +60,20 @@ pub struct ScreenCaster {
     manager: Arc<Mutex<GlobalHotKeyManager>>,
     start_hotkey: HotKey,
     stop_hotkey: HotKey,
+    clear_hotkey: HotKey,
     start_id: Arc<Mutex<u32>>,
     stop_id: Arc<Mutex<u32>>,
+    clear_id: Arc<Mutex<u32>>,
     start_shortcut: String,        // Shortcut per avviare la registrazione
     stop_shortcut: String,         // Shortcut per fermare la registrazione
+    clear_shortcut: String,
     handle_annotation_tool: Option<Child>,
     client: Option<Output>,
     streamers_map: HashMap<String, String>,
     streamers_suggestions: Vec<(String, String)>,
     streaming_client: Option<StreamingClient>,
-    selected_screen: usize,
+    screen_index: usize,
     share_mode: ShareMode,
-    crop_area: Option<CropArea>
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -94,9 +95,10 @@ impl Application for ScreenCaster {
     type Executor = iced::executor::Default;
     type Message = Message;
     type Theme = Theme;
-    type Flags = (Arc<Mutex<AppState>>, Arc<Mutex<GlobalHotKeyManager>>, Arc<Mutex<u32>>, Arc<Mutex<u32>>, HotKey, HotKey);
+    type Flags = (Arc<Mutex<AppState>>, Arc<Mutex<GlobalHotKeyManager>>, Arc<Mutex<u32>>, Arc<Mutex<u32>>, Arc<Mutex<u32>>, HotKey, HotKey, HotKey);
 
     fn new(flags: Self::Flags) -> (Self, Command<Self::Message>) {
+        let (start, stop, clear) = utils::read_hotkeys().unwrap();
         (
             ScreenCaster {
                 state: AppStateEnum::Home,
@@ -104,21 +106,22 @@ impl Application for ScreenCaster {
                 input_state: String::new(),
                 app_state: flags.0,
                 manager: flags.1,
-                start_hotkey: flags.4,
-                stop_hotkey: flags.5,
+                start_hotkey: flags.5,
+                stop_hotkey: flags.6,
+                clear_hotkey: flags.7,
                 start_id: flags.2,
                 stop_id: flags.3,
-                start_shortcut: "H".to_string(),
-                stop_shortcut: "F".to_string(),
+                clear_id: flags.4,
+                start_shortcut: start,
+                stop_shortcut: stop,
+                clear_shortcut: clear,
                 handle_annotation_tool: None,
                 client: None,
                 streamers_map: utils::get_streamers_map(),
                 streamers_suggestions: Vec::new(),
                 streaming_client: None,
-                selected_screen: 1,
+                screen_index: 1,
                 share_mode: ShareMode::Fullscreen,
-                crop_area: None
-
             },
             Command::none(),
         )
@@ -130,7 +133,7 @@ impl Application for ScreenCaster {
 
     fn update(&mut self, message: Message) -> Command<Message> {
         let mut app_state = self.app_state.lock().unwrap();
-
+        println!("{:?}", app_state.is_sharing);
         match message {
             Message::GoToShareScreen => {
                 self.state = AppStateEnum::SelectScreen;
@@ -141,12 +144,12 @@ impl Application for ScreenCaster {
                 app_state.is_sharing = false; // Non siamo in condivisione
             }
             Message::ScreenSelected => {
-                if self.share_mode == ShareMode::CropArea {
+                if app_state.share_mode == ShareMode::CropArea {
                     let exe_path = utils::get_project_src_path();
                     let mut real_path = "".to_string();
                     real_path = exe_path.display().to_string() + r"/overlay_crop/target/release/overlay_crop";
                     Command2::new(real_path)
-                        .arg(self.selected_screen.to_string())
+                        .arg(app_state.screen_index.to_string())
                         .output()
                         .expect("Non è stato possibile avviare l'overlay crop");
                 }
@@ -187,14 +190,14 @@ impl Application for ScreenCaster {
             Message::TryConnect => {
                 if self.ip_address.is_empty(){
                     let matching = self.streamers_map.iter()
-                    .filter(|(key, ip)| key.to_lowercase().starts_with(&self.input_state) || ip.starts_with(&self.input_state))
-                    .map(|(_, ip)| ip.clone())
-                    .collect::<Vec<String>>();
-                    
+                        .filter(|(key, ip)| key.to_lowercase().starts_with(&self.input_state) || ip.starts_with(&self.input_state))
+                        .map(|(_, ip)| ip.clone())
+                        .collect::<Vec<String>>();
+
                     match matching.len() {
                         0 => {
                             self.ip_address = self.input_state.clone();
-                            Command::perform(async {}, |_| Message::NoMatchFound);
+                            let _ = Command::perform(async {}, |_| Message::NoMatchFound);
                         }
                         1 => {
                             self.ip_address = matching[0].clone();
@@ -203,15 +206,15 @@ impl Application for ScreenCaster {
                             return Command::perform(async {}, |_| Message::MultipleMatches);
                         }
                     }
-                   
-                    
+
+
                 }
-                if utils::is_ip_in_lan(&self.ip_address) {
+                return if utils::is_ip_in_lan(&self.ip_address) {
                     self.state = AppStateEnum::Watching;
                     self.streaming_client = Some(StreamingClient::new(self.ip_address.clone()));
-                    return Command::perform(async {}, |_| Message::Connecting);
-                }else{
-                    return Command::perform(async {}, |_| Message::NotInLan );
+                    Command::perform(async {}, |_| Message::Connecting)
+                } else {
+                    Command::perform(async {}, |_| Message::NotInLan)
                 }
             }
             Message::VideoPlayerMessage(message) => {
@@ -225,15 +228,11 @@ impl Application for ScreenCaster {
                     self.streaming_client = None;
                 }
                 self.state = AppStateEnum::Connect;
-                
+
             }
             Message::Connecting => {
                 if let Some(sc) = &mut self.streaming_client {
-                    if let Some(VideoPlayerMessage::Exit) = sc.update(VideoPlayerMessage::Connect) {
-                        self.streaming_client = None;
-                        self.state = AppStateEnum::ServerNotReady;
-                    }
-
+                    sc.update(VideoPlayerMessage::Connect);
                 }
             }
             Message::NoMatchFound => {
@@ -251,10 +250,11 @@ impl Application for ScreenCaster {
             Message::SaveHotKeys => {
                 let manager = self.manager.lock().unwrap();
 
-                manager.unregister_all(&[self.start_hotkey, self.stop_hotkey]).unwrap();
+                manager.unregister_all(&[self.start_hotkey, self.stop_hotkey, self.clear_hotkey]).unwrap();
 
                 let start_code = parse_key_code(&self.start_shortcut).unwrap();
                 let stop_code = parse_key_code(&self.stop_shortcut).unwrap();
+                let clear_code = parse_key_code(&self.clear_shortcut).unwrap();
 
                 #[cfg(target_os = "macos")]
                 let hotkey_record = HotKey::new(Some(Modifiers::SUPER), start_code);
@@ -266,20 +266,32 @@ impl Application for ScreenCaster {
                 #[cfg(not(target_os = "macos"))]
                 let hotkey_stop = HotKey::new(Some(Modifiers::CONTROL), stop_code);
 
+                #[cfg(target_os = "macos")]
+                let hotkey_clear = HotKey::new(Some(Modifiers::SUPER), clear_code);
+                #[cfg(not(target_os = "macos"))]
+                let hotkey_clear = HotKey::new(Some(Modifiers::CONTROL), clear_code);
+
                 let _ = manager.register(hotkey_record).unwrap();
                 let _ = manager.register(hotkey_stop).unwrap();
+                let _ = manager.register(hotkey_clear).unwrap();
 
                 self.start_hotkey = hotkey_record;
                 self.stop_hotkey = hotkey_stop;
+                self.clear_hotkey = hotkey_clear;
 
                 let mut id1 = self.start_id.lock().unwrap();
                 *id1 = hotkey_record.id();
                 let mut id2 = self.stop_id.lock().unwrap();
                 *id2 = hotkey_stop.id();
+                let mut id3 = self.clear_id.lock().unwrap();
+                *id3 = hotkey_clear.id();
+
+                utils::save_hotkeys(&self.start_shortcut, &self.stop_shortcut, &self.clear_shortcut).unwrap();
 
                 println!("Hotkeys modificate!");
                 println!("Start: {}", self.start_shortcut);
                 println!("Stop: {}", self.stop_shortcut);
+                println!("Clear: {}", self.clear_shortcut);
             }
             Message::StartRecordHotkeyChanged(key) => {
                 self.start_shortcut = key
@@ -287,7 +299,11 @@ impl Application for ScreenCaster {
             Message::StopRecordHotkeyChanged(key) => {
                 self.stop_shortcut = key
             }
+            Message::ClearHotkeyChanged(key) => {
+                self.clear_shortcut = key
+            }
             Message::ToggleAnnotationMode => {
+                app_state.is_drawing = true;
                 if self.handle_annotation_tool.is_some() {
                     self.handle_annotation_tool.as_mut().unwrap().kill().unwrap();
                     self.handle_annotation_tool = None;
@@ -295,10 +311,12 @@ impl Application for ScreenCaster {
                     let exe_path = utils::get_project_src_path();
                     let mut real_path = "".to_string();
                     real_path = exe_path.display().to_string() + r"/annotation_tool/target/release/annotation_tool";
-                    self.handle_annotation_tool = Some(Command2::new(real_path)
-                        .arg(self.selected_screen.to_string())
+                    let child = Some(Command2::new(real_path)
+                        .arg(app_state.screen_index.to_string())
+                        .stdin(Stdio::piped())
                         .spawn()
                         .expect("Non è stato possibile avviare l'annotation tool"));
+                    app_state.annotation_stdin = child.unwrap().stdin;
                 }
             }
             Message::SelectCropArea => {
@@ -306,7 +324,7 @@ impl Application for ScreenCaster {
                 let mut real_path = "".to_string();
                 real_path = exe_path.display().to_string() + r"/overlay_crop/target/release/overlay_crop";
                 Command2::new(real_path)
-                    .arg(self.selected_screen.to_string())
+                    .arg("t")
                     .output()
                     .expect("Non è stato possibile avviare l'overlay crop");
             }
@@ -318,9 +336,11 @@ impl Application for ScreenCaster {
                 }
             }
             Message::PickList(n) => {
-                self.selected_screen = n;
+                app_state.screen_index = n;
+                self.screen_index = n;
             }
             Message::ModeSelected(mode) => {
+                app_state.share_mode = mode;
                 self.share_mode = mode;
             }
         }
@@ -335,8 +355,7 @@ impl Application for ScreenCaster {
             AppStateEnum::Connect => self.view_connect(),
             AppStateEnum::ChangeHotKeys => self.view_change_hotkey(),
             AppStateEnum::Watching => self.view_watching(),
-            AppStateEnum::SelectScreen => self.view_select_screen(),
-            AppStateEnum::ServerNotReady => self.view_server_not_ready(),
+            AppStateEnum::SelectScreen => self.view_select_screen()
         }
     }
 
@@ -347,7 +366,7 @@ impl Application for ScreenCaster {
     fn subscription(&self) -> Subscription<Message> {
         match self.state {
             AppStateEnum::Watching => {if let Some(sc) = self.streaming_client.as_ref() { sc.subscription().map(Message::VideoPlayerMessage)}
-                else{ Subscription::none()}},
+            else{ Subscription::none()}},
             _ => {Subscription::none()}
         }
     }
@@ -400,6 +419,7 @@ impl ScreenCaster {
         let screens = (1..=n_screens).collect::<Vec<usize>>();
         let modes = vec![ShareMode::Fullscreen, ShareMode::CropArea];
 
+
         let content = Column::new()
             .spacing(40)
             .align_items(Alignment::Center)
@@ -416,7 +436,7 @@ impl ScreenCaster {
                             .push(
                                 PickList::new(
                                     screens,
-                                    Some(self.selected_screen),
+                                    Some(self.screen_index),
                                     Message::PickList,
                                 )
                                     .placeholder("Seleziona uno schermo..."),
@@ -519,22 +539,22 @@ impl ScreenCaster {
             )
             .push(
                 Scrollable::new(
-                        self.streamers_suggestions.iter().fold(Column::new().spacing(5), |column, (suggestion, ip)| {
-                            column.push(
-                                Button::new(
-                                        Row::new()
-                                            .spacing(350)
-                                            .align_items(Alignment::Center)
-                                            .push(Text::new(suggestion))
-                                            .push(Text::new(ip))
-                                )
+                    self.streamers_suggestions.iter().fold(Column::new().spacing(5), |column, (suggestion, ip)| {
+                        column.push(
+                            Button::new(
+                                Row::new()
+                                    .spacing(350)
+                                    .align_items(Alignment::Center)
+                                    .push(Text::new(suggestion))
+                                    .push(Text::new(ip))
+                            )
                                 .on_press(Message::SuggestionClicked((suggestion.clone(), ip.clone())))
                                 .padding(8)
                                 .width(Length::Fixed(500.0)),
-                            )
-                        }),
-                    ),
-                    
+                        )
+                    }),
+                ),
+
             )
             .push(
                 Row::new()
@@ -568,40 +588,40 @@ impl ScreenCaster {
             let video_player = sc.view_video().map(Message::VideoPlayerMessage);
             let record_button = sc.view_record_button().map(Message::VideoPlayerMessage);
             content = Column::new()
-                        .push(video_player)
+                .push(video_player)
+                .push(
+                    Row::new()
+                        .spacing(20)
+                        .align_items(Alignment::Center)
                         .push(
-                            Row::new()
-                            .spacing(20)
-                            .align_items(Alignment::Center)
-                            .push(
-                                Button::new(Text::new("Stop watching"))
-                                    .padding(10)
-                                    .width(Length::Fixed(200.0))
-                                    .on_press(Message::StopConnection),
-                            )
-                            .push(
-                                record_button
-                            )
-                            .align_items(Alignment::Center)
-                            .padding(10),
+                            Button::new(Text::new("Stop watching"))
+                                .padding(10)
+                                .width(Length::Fixed(200.0))
+                                .on_press(Message::StopConnection),
                         )
+                        .push(
+                            record_button
+                        )
+                        .align_items(Alignment::Center)
+                        .padding(10),
+                )
                 .align_items(Alignment::Center);
-                        
+
 
         }else{
             content = Column::new()
                 .push(Text::new("SOMETHING WENT WRONG"));
         }
-                    
+
         Container::new(content)
             .width(Length::Fill)
             .height(Length::Fill)
             .center_x()
             .center_y()
             .into()
-        
+
     }
-    
+
     fn view_change_hotkey(&self) -> Element<Message> {
         let content = Column::new()
             .spacing(20)
@@ -646,6 +666,23 @@ impl ScreenCaster {
                     .spacing(20)
                     .align_items(Alignment::Center)
                     .push(
+                        Text::new("Inserisci la key per cancellare le annotazioni:").size(20)
+                    )
+                    .push(
+                        TextInput::new(
+                            "Inserisci l'hotkey per cancellare le annotazioni",
+                            &self.clear_shortcut.to_uppercase(),
+                        )
+                            .padding(10)
+                            .width(Length::Fixed(50.0))
+                            .on_input(Message::ClearHotkeyChanged),
+                    )
+            )
+            .push(
+                Row::new()
+                    .spacing(20)
+                    .align_items(Alignment::Center)
+                    .push(
                         Button::new(Text::new("Salva hotkeys"))
                             .padding(10)
                             .width(Length::Fixed(200.0))
@@ -666,42 +703,8 @@ impl ScreenCaster {
             .center_y()
             .into()
     }
-
-    fn view_server_not_ready(&self) -> Element<Message> {
-        let content = Column::new()
-            .spacing(20)
-            .align_items(Alignment::Center)
-            .push(
-                Row::new()
-                    .spacing(20)
-                    .align_items(Alignment::Center)
-                    .push(Text::new("Il server non è pronto").size(30))
-            )
-            .push(
-                Row::new()
-                    .spacing(20)
-                    .align_items(Alignment::Center)
-                    .push(
-                        Button::new(Text::new("Connetti"))
-                            .padding(10)
-                            .on_press(Message::TryConnect),
-                    )
-                    .push(
-                        Button::new(Text::new("Torna alla Home"))
-                            .padding(10)
-                            .on_press(Message::GoBackHome),
-                    ),
-            );
-
-        Container::new(content)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .center_x()
-            .center_y()
-            .into()
-    }
 }
 
-pub fn run_gui(app_state: Arc<Mutex<AppState>>, manager: Arc<Mutex<GlobalHotKeyManager>>, id1: Arc<Mutex<u32>>, id2: Arc<Mutex<u32>>, hotkey_record: HotKey, hotkey_stop: HotKey) {
-    ScreenCaster::run(Settings::with_flags((app_state, manager, id1, id2, hotkey_record, hotkey_stop))).expect("Failed to start application");
+pub fn run_gui(app_state: Arc<Mutex<AppState>>, manager: Arc<Mutex<GlobalHotKeyManager>>, id1: Arc<Mutex<u32>>, id2: Arc<Mutex<u32>>, id3: Arc<Mutex<u32>>, hotkey_record: HotKey, hotkey_stop: HotKey, hotkey_clear: HotKey) {
+    ScreenCaster::run(Settings::with_flags((app_state, manager, id1, id2, id3, hotkey_record, hotkey_stop, hotkey_clear))).expect("Failed to start application");
 }

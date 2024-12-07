@@ -1,3 +1,4 @@
+use std::io::Write;
 use global_hotkey::{GlobalHotKeyEvent, HotKeyState, hotkey::{Code}};
 use std::sync::{Arc, Mutex};
 
@@ -10,9 +11,15 @@ use winapi::um::winbase::WAIT_OBJECT_0;
 use crate::streaming_server;
 use crate::gui::ShareMode;
 
+
+
 pub struct AppState {
     pub(crate) is_sharing: bool, // Indica se siamo nella schermata di condivisione
     pub(crate) streaming_server: streaming_server::StreamingServer, // Oggetto per la gestione della registrazione
+    pub(crate) share_mode: ShareMode, // Modalità di condivisione
+    pub(crate) screen_index: usize, // Indice dello schermo da condividere
+    pub(crate) annotation_stdin: Option<std::process::ChildStdin>, // Stdin per l'invio delle annotazioni
+    pub(crate) is_drawing: bool, // Indica se siamo in modalità di disegno
 }
 
 impl AppState {
@@ -20,12 +27,16 @@ impl AppState {
         AppState {
             is_sharing: false,
             streaming_server: streaming_server::StreamingServer::new(),
+            share_mode: ShareMode::Fullscreen,
+            screen_index: 1,
+            annotation_stdin: None,
+            is_drawing: false,
         }
     }
 
-    pub fn start(&mut self, screen_index: usize, share_mode: ShareMode) {
+    pub fn start(&mut self) {
         if self.is_sharing {
-            self.streaming_server.start(screen_index, share_mode); // Avvia la registrazione
+            self.streaming_server.start(self.screen_index, self.share_mode); // Avvia la registrazione
             println!("Registrazione avviata!");
         } else {
             println!("Non siamo nella schermata di condivisione.");
@@ -38,10 +49,18 @@ impl AppState {
             println!("Registrazione fermata!");
         }
     }
+
+    pub fn clear(&mut self) {
+        if self.is_drawing{
+            let mut std = self.annotation_stdin.as_mut().unwrap();
+            writeln!(std, "clear").unwrap();
+            println!("Annotation cleared");
+        }
+    }
 }
 
 #[cfg(target_os = "macos")]
-pub fn macos_event_loop(id1: Arc<Mutex<u32>>, id2: Arc<Mutex<u32>>, app_state: Arc<Mutex<AppState>>, running: Arc<Mutex<bool>>) {
+pub fn macos_event_loop(id1: Arc<Mutex<u32>>, id2: Arc<Mutex<u32>>, id3: Arc<Mutex<u32>>, app_state: Arc<Mutex<AppState>>, running: Arc<Mutex<bool>>) {
     loop {
         if !*running.lock().unwrap() {
             break;
@@ -51,9 +70,11 @@ pub fn macos_event_loop(id1: Arc<Mutex<u32>>, id2: Arc<Mutex<u32>>, app_state: A
             if event.state == HotKeyState::Released {
                 let mut state = app_state.lock().unwrap();
                 if event.id == *id1.lock().unwrap() {
-                    state.start(0, ShareMode::Fullscreen); // Avvia la registrazione solo se siamo nella schermata di condivisione
+                    state.start(); // Avvia la registrazione solo se siamo nella schermata di condivisione
                 } else if event.id == *id2.lock().unwrap() {
                     state.stop(); // Ferma la registrazione
+                } else if event.id == *id3.lock().unwrap() {
+                    state.clear();
                 }
             }
         }
@@ -61,7 +82,7 @@ pub fn macos_event_loop(id1: Arc<Mutex<u32>>, id2: Arc<Mutex<u32>>, app_state: A
 }
 
 #[cfg(target_os = "linux")]
-pub fn linux_event_loop(id1: Arc<Mutex<u32>>, id2: Arc<Mutex<u32>>, app_state: Arc<Mutex<AppState>>, running: Arc<Mutex<bool>>) {
+pub fn linux_event_loop(id1: Arc<Mutex<u32>>, id2: Arc<Mutex<u32>>, id3: Arc<Mutex<u32>>, app_state: Arc<Mutex<AppState>>, running: Arc<Mutex<bool>>) {
     loop {
         if !*running.lock().unwrap() {
             break;
@@ -71,9 +92,11 @@ pub fn linux_event_loop(id1: Arc<Mutex<u32>>, id2: Arc<Mutex<u32>>, app_state: A
             let mut state = app_state.lock().unwrap();
             if event.state == HotKeyState::Released {
                 if event.id == *id1.lock().unwrap() {
-                    state.start(0, ShareMode::Fullscreen); // Avvia la registrazione solo se siamo nella schermata di condivisione
+                    state.start(state.screen_index, state.share_mode); // Avvia la registrazione solo se siamo nella schermata di condivisione
                 } else if event.id == *id2.lock().unwrap() {
                     state.stop(); // Ferma la registrazione
+                } else if event.id == *id3.lock().unwrap() {
+                    state.clear();
                 }
             }
         }
@@ -81,7 +104,7 @@ pub fn linux_event_loop(id1: Arc<Mutex<u32>>, id2: Arc<Mutex<u32>>, app_state: A
 }
 
 #[cfg(target_os = "windows")]
-pub fn windows_event_loop(id1: Arc<Mutex<u32>>, id2: Arc<Mutex<u32>>, app_state: Arc<Mutex<AppState>>, running: Arc<Mutex<bool>>) {
+pub fn windows_event_loop(id1: Arc<Mutex<u32>>, id2: Arc<Mutex<u32>>, id3: Arc<Mutex<u32>>, app_state: Arc<Mutex<AppState>>, running: Arc<Mutex<bool>>) {
     unsafe {
         let mut msg: MSG = std::mem::zeroed();
         loop {
@@ -93,9 +116,11 @@ pub fn windows_event_loop(id1: Arc<Mutex<u32>>, id2: Arc<Mutex<u32>>, app_state:
                 let mut state = app_state.lock().unwrap();
                 if event.state == HotKeyState::Released {
                     if event.id == *id1.lock().unwrap() {
-                        state.start(0, ShareMode::Fullscreen); // Avvia la registrazione solo se siamo nella schermata di condivisione
+                        state.start(); // Avvia la registrazione solo se siamo nella schermata di condivisione
                     } else if event.id == *id2.lock().unwrap() {
                         state.stop(); // Ferma la registrazione
+                    } else if event.id == *id3.lock().unwrap() {
+                        state.clear();
                     }
                 }
             }
@@ -161,3 +186,4 @@ pub fn parse_key_code(key: &str) -> Option<Code> {
         _ => None,
     }
 }
+

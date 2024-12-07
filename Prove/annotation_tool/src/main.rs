@@ -1,12 +1,14 @@
 #![windows_subsystem = "windows"]
 
-use std::env;
+use std::{env, thread};
 use anyhow::Context;
-use druid::{AppLauncher, Menu, Screen, WidgetExt, WindowDesc, MenuItem};
+use druid::{AppLauncher, Menu, Screen, WidgetExt, WindowDesc, MenuItem, ExtEventSink, Target, Selector};
 use druid::piet::{Color, RenderContext};
 use druid::widget::{Button, Flex, Widget, MainAxisAlignment};
 use druid::{Data, Env, EventCtx, Point, Rect, Lens, Event, LifeCycle, LifeCycleCtx, UpdateCtx, LayoutCtx, BoxConstraints, Size, Application};
 use druid::kurbo::{Line};
+
+const STDIN_INPUT: Selector<String> = Selector::new("stdin.input");
 
 #[derive(PartialEq, Debug, Clone, Data)]
 pub enum OverlayState {
@@ -73,6 +75,14 @@ impl DrawingOverlay {
 impl Widget<AppData> for DrawingOverlay {
     fn event(&mut self, ctx: &mut EventCtx, event: &Event, data: &mut AppData, _env: &Env) {
         match event {
+            Event::Command(cmd) if cmd.is(STDIN_INPUT) => {
+                if let Some(input) = cmd.get(STDIN_INPUT) {
+                    if input == "clear" {
+                        data.shapes.clear();
+                        ctx.request_paint();
+                    }
+                }
+            }
             Event::MouseDown(mouse) => {
                 // Start tracking the rectangle
                 data.start_point = Some(mouse.pos);
@@ -286,11 +296,41 @@ pub fn main() -> anyhow::Result<()> {
         current_background_color: Color::rgba8(0xff, 0xff, 0xff, 0x00),
     };
 
-    AppLauncher::with_window(main_window)
+
+    let launcher = AppLauncher::with_window(main_window);
+    let event_sink = launcher.get_external_handle();
+
+    // Avvia un thread separato per leggere da stdin
+    start_stdin_reader(event_sink);
+
+    launcher
         .launch(initial_data)
         .expect("Failed to launch application");
 
     Ok(())
+}
+
+fn start_stdin_reader(event_sink: ExtEventSink) {
+    thread::spawn(move || {
+        let stdin = std::io::stdin();
+        let mut buffer = String::new();
+
+        loop {
+            buffer.clear();
+            // Legge da stdin
+            if stdin.read_line(&mut buffer).is_ok() {
+                let input = buffer.trim().to_string();
+                if input == "quit" {
+                    // Puoi inviare un comando specifico per chiudere l'applicazione
+                    event_sink.submit_command(druid::commands::QUIT_APP, (), Target::Global).unwrap();
+                    break;
+                } else {
+                    // Invia il comando al thread principale
+                    event_sink.submit_command(STDIN_INPUT, input, Target::Global).unwrap();
+                }
+            }
+        }
+    });
 }
 
 fn build_root_widget() -> impl Widget<AppData> {
