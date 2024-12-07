@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-ffmpeg-sidecar = "1.1.0"
+ffmpeg-sidecar = { version = "2.0.3", features = ["named_pipes"]}
 anyhow = "1.0.86"
 iced = { version = "0.10.0", features = ["wgpu", "image", "async-std", "advanced"] }
 winit = "0.30.5"

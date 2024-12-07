@@ -152,8 +152,11 @@ impl Application for ScreenCaster {
                 self.state = AppStateEnum::Sharing;
             }
             Message::StartCasting => {
-                app_state.streaming_server.start(self.selected_screen, self.share_mode); // Avvia la registrazione
-                println!("Screen casting avviato!");
+                match app_state.streaming_server.start(self.selected_screen, self.share_mode){
+                    Ok(_) => { // Avvia la registrazione
+                        println!("Screen casting avviato!");},
+                    Err(e) => {println!("error: {}", e)}
+                }
             }
             Message::StopCasting => {
                 app_state.streaming_server.stop(); // Ferma la registrazione

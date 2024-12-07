@@ -243,11 +243,11 @@ pub fn get_ffmpeg_command(screen_index:usize, crop: Option<CropArea>) -> String 
     {
         match crop {
             Some(crop) => {
-                format!("-f avfoundation -re -video_size 1280x720 -capture_cursor 1 -i {}: -vf crop={}:{}:{}:{} -tune zerolatency -f mpegts -codec:v libx264 -preset slow -crf 28 -pix_fmt yuv420p pipe:1", screen_index, crop.width, crop.height, crop.x_offset, crop.y_offset)
+                format!("-f avfoundation -re -video_size 1280x720 -capture_cursor 1 -i {}: -vf crop={}:{}:{}:{} -tune zerolatency -f mpegts -codec:v libx264 -preset slow -crf 28 -pix_fmt yuv420p", screen_index, crop.width, crop.height, crop.x_offset, crop.y_offset)
 
             }
             None => {
-                format!("-f avfoundation -re -video_size 1280x720 -capture_cursor 1 -i {}: -tune zerolatency -f mpegts -codec:v libx264 -preset slow -crf 28 -pix_fmt yuv420p pipe:1", screen_index)
+                format!("-f avfoundation -re -video_size 1280x720 -capture_cursor 1 -i {}: -tune zerolatency -f mpegts -codec:v libx264 -preset slow -crf 28 -pix_fmt yuv420p", screen_index)
             }
         }
     }
@@ -257,7 +257,7 @@ pub fn get_ffmpeg_command(screen_index:usize, crop: Option<CropArea>) -> String 
         let (width, height, top_x, top_y) = compute_window_size(screen_index).unwrap();
         match crop {
             Some(crop) => {
-                format!("-f gdigrab -framerate 30 -offset_x {} -offset_y {} -video_size {}x{} -i desktop -capture_cursor 1 -tune zerolatency -f mpegts -codec:v libx264 -preset slow -crf 28 -pix_fmt yuv420p pipe:1", crop.x_offset, crop.y_offset, crop.width, crop.height)
+                format!("-f gdigrab -framerate 30 -offset_x {} -offset_y {} -video_size {}x{} -i desktop -capture_cursor 1 -tune zerolatency -f mpegts -codec:v libx264 -preset slow -crf 28 -pix_fmt yuv420p", crop.x_offset, crop.y_offset, crop.width, crop.height)
             }
             None => {
                 format!("-f gdigrab -framerate 30 -i desktop -capture_cursor 1 -f mpegts")
@@ -270,10 +270,10 @@ pub fn get_ffmpeg_command(screen_index:usize, crop: Option<CropArea>) -> String 
         let (width, height, top_x, top_y) = compute_window_size(screen_index).unwrap();
         match crop {
             Some(crop) => {
-                format!("ffmpeg -f x11grab -framerate 30 -video_size {}x{} -i :0.0+{},{} -draw_mouse 1 -tune zerolatency -f mpegts -codec:v libx264 -preset faster -crf 28 -pix_fmt yuv420p pipe:1", crop.width, crop.height, crop.x_offset, crop.y_offset)
+                format!("ffmpeg -f x11grab -framerate 30 -video_size {}x{} -i :0.0+{},{} -draw_mouse 1 -tune zerolatency -f mpegts -codec:v libx264 -preset faster -crf 28 -pix_fmt yuv420p", crop.width, crop.height, crop.x_offset, crop.y_offset)
             }
             None => {
-                format!("ffmpeg -f x11grab -framerate 30 -video_size {}x{} -i :0.0+{},{} -draw_mouse 1 -tune zerolatency -f mpegts -codec:v libx264 -preset faster -crf 28 -pix_fmt yuv420p pipe:1", width, height+0.5, top_x, top_y-0.5)
+                format!("ffmpeg -f x11grab -framerate 30 -video_size {}x{} -i :0.0+{},{} -draw_mouse 1 -tune zerolatency -f mpegts -codec:v libx264 -preset faster -crf 28 -pix_fmt yuv420p", width, height+0.5, top_x, top_y-0.5)
             }
         }
     }

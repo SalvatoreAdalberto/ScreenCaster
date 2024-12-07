@@ -10,16 +10,22 @@ use std::collections::HashMap;
 use std::fs::File;
 use ffmpeg_sidecar::command::FfmpegCommand;
 use ffmpeg_sidecar::child::FfmpegChild;
+use ffmpeg_sidecar::named_pipes::NamedPipe;
+use ffmpeg_sidecar::pipe_name;
+use ffmpeg_sidecar::event::{FfmpegEvent, LogLevel};
 use std::io::{Read, Write, BufReader};
 use crate::gui::ShareMode;
 use crate::utils;
+use anyhow;
 
+const SHARE_PIPE_NAME: &str = pipe_name!("share_pipe");
 const BUFFER_SIZE: usize = 1024;
 struct Client{
     tx: std::sync::mpsc::Sender<Vec<u8>>,
 }
 
 pub struct StreamingServer {
+    ready_to_share: bool,
     handle: Option<Mutex<FfmpegChild>>,
     list_clients: Arc<Mutex<HashMap<String, Client>>>,
 }
@@ -35,12 +41,13 @@ pub struct CropArea {
 impl StreamingServer {
     pub fn new() -> Self {
         StreamingServer {
-            handle: None,
+            ready_to_share: false,
+            handle: None,   
             list_clients: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
-    pub fn start(&mut self, screen_index: usize, share_mode: ShareMode) {
+    pub fn start(&mut self, screen_index: usize, share_mode: ShareMode) -> anyhow::Result<()> {
 
         let mut command = "".to_string();
 
@@ -88,18 +95,60 @@ impl StreamingServer {
         let socket = Arc::new(UdpSocket::bind(format!("{ip_address}:8080")).expect("Failed to bind socket"));  // Il client bind sulla porta 8080
         let listener_socket = socket.clone();
 
-        let ffmpeg_command = command.split(" ").collect::<Vec<&str>>();
-
-        // Avvia il comando FFmpeg con ffmpeg-sidecar
-        let mut ffmpeg = FfmpegCommand::new().args(&ffmpeg_command).spawn().expect("Failed to start FFmpeg");
-        let mut reader = BufReader::new(ffmpeg.take_stdout().unwrap());
-        let mut buffer: [u8; BUFFER_SIZE] = [0; BUFFER_SIZE];
-
-        let handle = Mutex::new(ffmpeg);
-
-        //Lista dei client connessi
+        //let mut pipe = NamedPipe::new(SHARE_PIPE_NAME)?;
+        let (ready_sender, ready_receiver) = channel::<()>();
         let list_tx_clients_clone = Arc::clone(&self.list_clients);
+        println!("here");
 
+        let ffmpeg_command = command.split(" ").collect::<Vec<&str>>();
+        let mut ffmpeg = FfmpegCommand::new().args(&ffmpeg_command).overwrite().output("-")
+        .spawn()?;
+        let mut reader = BufReader::new(ffmpeg.take_stdout().unwrap());
+
+        thread::spawn(move || -> anyhow::Result<()>{
+            ready_receiver.recv().unwrap();
+            let mut buffer: [u8; BUFFER_SIZE] = [0; BUFFER_SIZE];
+            loop {
+                match reader.read(&mut buffer) {
+                    Ok(bytes_read) => {
+                        if bytes_read == 0 {
+                            break;
+                        }
+                        let clients = list_tx_clients_clone.lock().unwrap();
+                        for client in clients.values() {
+                            client.tx.send(buffer[..bytes_read].to_vec()).unwrap();
+                        }
+                    },
+                    Err(err) => {
+                      if err.kind() != std::io::ErrorKind::BrokenPipe {
+                        return Err(err.into());
+                      } else {
+                        break;
+                      }
+                    }
+                  }
+                }
+            println!("Exiting because read on pipe returned 0 bytes");
+            Ok(())
+        });
+
+       
+        for event in ffmpeg.iter()? {
+            match event {
+                // Signal threads when output is ready
+                FfmpegEvent::Progress(_) if !self.ready_to_share => {
+                    ready_sender.send(()).unwrap();
+                    println!("message sent exiting..");
+                    self.ready_to_share = true;
+                    break;
+                },
+                _ => {
+                    println!("other event: {:?}", event);
+                }
+            }
+        }
+        let handle = Mutex::new(ffmpeg);
+        let list_tx_clients_clone2: Arc<Mutex<HashMap<String, Client>>> = Arc::clone(&self.list_clients);
         //LISTENER THREAD
         thread::spawn(move || {
             let mut buffer = [0; BUFFER_SIZE];
@@ -124,7 +173,7 @@ impl StreamingServer {
                     let (tx, rx) = channel::<Vec<u8>>();
 
                     // Aggiungi il client alla lista
-                    let mut list_guard = list_tx_clients_clone.lock().unwrap();
+                    let mut list_guard = list_tx_clients_clone2.lock().unwrap();
                     list_guard.insert(target_address.clone(), Client{ tx, });
 
                     listener_socket.send_to(b"OK", &target_address).unwrap();
@@ -148,7 +197,7 @@ impl StreamingServer {
                 if message.trim().starts_with("STOP"){
                     let message = message.split("\n").collect::<Vec<&str>>();
                     let ip = message[1];
-                    let mut list_guard = list_tx_clients_clone.lock().unwrap();
+                    let mut list_guard = list_tx_clients_clone2.lock().unwrap();
                     list_guard.remove(ip);
                     drop(list_guard);
                     listener_socket.send_to(b"OK", &client_address).unwrap();
@@ -156,21 +205,9 @@ impl StreamingServer {
             }
         });
 
-        let list_tx_clients_clone2 = Arc::clone(&self.list_clients);
-        thread::spawn(move || {
-            loop {
-                let n = reader.read(&mut buffer).unwrap();
-                if n == 0 {
-                    break;
-                }
-                let clients = list_tx_clients_clone2.lock().unwrap();
-                for client in clients.values() {
-                    client.tx.send(buffer[..n].to_vec()).unwrap();
-                }
-            }
-        });
-
         self.handle = Some(handle);
+        println!("sender will be dropped now..");
+        Ok(())
 
     }
 
@@ -181,9 +218,8 @@ impl StreamingServer {
             if let Some(mut stdin) = (*guard).take_stdin() {
                 writeln!(stdin, "q").unwrap();
             }
-
             guard.wait().expect("Failed to stop FFmpeg process");
-
+            self.ready_to_share = false;
             println!("Screen casting fermato!");
         } else {
             println!("No casting in progress to stop.");

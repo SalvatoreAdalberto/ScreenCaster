@@ -15,7 +15,7 @@ use std::io::{Read, Write, BufWriter};
 use std::io::ErrorKind;
 use chrono::Local;
 use std::time::Duration;
-use crate::workers;
+use crate::workers::FrameProcessorConstructor;
 
 use iced::{ Subscription, time as iced_time, Command, Element, Length};
 use iced::widget::{Button, image::Handle, image::Image, Text};
@@ -162,7 +162,7 @@ impl StreamingClient {
                     }
                 }
             }
-            println!("Ending thread1");
+            println!("Ending thread-socketManager-1");
         });
         // PLAYBACK
         thread::spawn(move || {
@@ -177,30 +177,32 @@ impl StreamingClient {
             let mut stdin = ffmpeg_command.take_stdin().unwrap();
             let mut writer = BufWriter::new(&mut stdin);
             //DECODE AND PLAY
-            let w_manager = Arc::new(workers::WorkersManger::new(5, Arc::new(Mutex::new(receiver_frame)), sender_image));
-            let w_manager2 = w_manager.clone();
+            let  ( dispatcher, mut aggregator )= FrameProcessorConstructor::new(5, receiver_frame, sender_image);
             thread::spawn(move || {
                     // Itera sugli eventi di output di ffmpeg
-                    ffmpeg_command.iter().expect("Errore iterando i frame").for_each(|e| {
+                    for e in ffmpeg_command.iter().expect("Errore iterando i frame"){
                         match e {
-                            OutputFrame(frame) => sender_frame.send(frame).unwrap(),                
-                            _ => {},//println!("Event: {:?}", e),
+                            OutputFrame(frame) => {
+                                match sender_frame.send(frame){
+                                    Ok(_) => {},
+                                    Err(_) => {break},
+                                }
+                            },                
+                            _ => {},
                         }
-                        //println!("len: {:?} ", e);
-                        
-                    });
-                    println!("Ending thread2");
+                    };
+                    drop(sender_frame);
+                    println!("Ending thread-externalSendFrame-2");
 
                 });
             thread::spawn(move || {
-                w_manager2.execute();
-                println!("Ending thread3");
-
+                dispatcher.execute();
+                println!("Ending thread-executeManager-3");
             });
             thread::spawn(move ||{
-                w_manager.activate();
-                println!("Ending thread4");
-
+                aggregator.activate();
+                aggregator.join_workers();
+                println!("Ending thread-activateManager-4");
             });
 
             loop {
@@ -208,13 +210,13 @@ impl StreamingClient {
                     Ok(data) => {
                         writer.write_all(&data).unwrap();
                     }
-                    Err(err) => {
-                        eprintln!("Failed to receive data playback: {}", err);
+                  Err(err) => {
+                        //eprintln!("Failed to receive data playback: {}", err);
                         break;
                     }
                 }
             }
-            println!("Ending thread5");
+            println!("Ending thread-ffmpegStdinWriter-5");
 
         });
     }
