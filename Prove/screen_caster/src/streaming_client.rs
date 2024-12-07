@@ -332,48 +332,48 @@ impl StreamingClient {
     }
 
     pub fn update(&mut self, message: VideoPlayerMessage) -> Option<VideoPlayerMessage> {
-        match message{
+        return match message {
             VideoPlayerMessage::Connect => {
                 match self.start_connection() {
                     None => {
                         self.manage_incoming_packets();
                         self.state = StreamingClientStateEnum::Connected;
-                        return None;
+                        None
                     }
                     Some(_) => {
-                        return Some(VideoPlayerMessage::Exit);
+                        Some(VideoPlayerMessage::Exit)
                     }
                 }
             }
             VideoPlayerMessage::NextFrame => {
-                if let Some(image) = self.update_image(){
+                if let Some(image) = self.update_image() {
                     match image.data() {
-                        iced::advanced::image::Data::Rgba{width, height, pixels} =>{
+                        iced::advanced::image::Data::Rgba { width, height, pixels } => {
                             println!("{} {} {}", width, height, pixels.len());
                         },
-                        iced::advanced::image::Data::Bytes(bytes) =>{
+                        iced::advanced::image::Data::Bytes(bytes) => {
                             println!("{}", bytes.len());
                         },
-                        _ => {} 
+                        _ => {}
                     };
                     self.current_frame = image;
                 }
-                return None;
+                None
             }
             VideoPlayerMessage::Exit => {
-                    if let Some(_) = self.pid_record{
-                        self.stop_record();
-                    }
-                    self.on_exit();
-                return None;
+                if let Some(_) = self.pid_record {
+                    self.stop_record();
+                }
+                self.on_exit();
+                None
             }
             VideoPlayerMessage::StartRecord => {
-                    self.start_record();
-                return None;
+                self.start_record();
+                None
             }
             VideoPlayerMessage::StopRecord => {
-                    self.stop_record();
-                return None;
+                self.stop_record();
+                None
             }
         }
     }
@@ -403,7 +403,7 @@ impl StreamingClient {
 
     pub fn subscription(&self) -> Subscription<VideoPlayerMessage>{
             match self.state{
-                StreamingClientStateEnum::Connected => {iced_time::every(Duration::from_secs_f32(1.0/120.0 )).map(|_| VideoPlayerMessage::NextFrame)},
+                StreamingClientStateEnum::Connected => {iced_time::every(Duration::from_secs_f32(1.0/60.0 )).map(|_| VideoPlayerMessage::NextFrame)},
                 _  => {Subscription::none()}
             }
             

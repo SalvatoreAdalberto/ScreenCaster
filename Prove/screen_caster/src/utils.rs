@@ -10,7 +10,9 @@ use ipnetwork::IpNetwork;
 use std::net::{Ipv4Addr, IpAddr};
 use if_addrs::{get_if_addrs, IfAddr};
 
-use std::io::BufRead;
+use std::io;
+use std::fs::File;
+use std::io::{BufRead, BufReader, Write};
 use std::env;
 use std::path::PathBuf;
 use druid::Screen;
@@ -25,6 +27,7 @@ use iced::advanced::graphics::image::image_rs::write_buffer_with_format;
 use crate::streaming_server::CropArea;
 
 pub const STREAMERS_LIST_PATH : &str = "../config/streamers_list.txt";
+pub const HOTKEYS_CONFIG_PATH : &str = "../config/hotkeys.txt";
 
 pub fn is_ip_in_lan(ip_to_check: &str) -> bool {
     let target_ip: Ipv4Addr = ip_to_check.parse().expect("Indirizzo IP non valido");
@@ -257,10 +260,10 @@ pub fn get_ffmpeg_command(screen_index:usize, crop: Option<CropArea>) -> String 
         let (width, height, top_x, top_y) = compute_window_size(screen_index).unwrap();
         match crop {
             Some(crop) => {
-                format!("-f gdigrab -framerate 30 -offset_x {} -offset_y {} -video_size {}x{} -i desktop -capture_cursor 1 -tune zerolatency -f mpegts -codec:v libx264 -preset slow -crf 28 -pix_fmt yuv420p pipe:1", crop.x_offset, crop.y_offset, crop.width, crop.height)
+                format!("-f gdigrab -framerate 30 -offset_x {} -offset_y {} -video_size {}x{} -i desktop -tune zerolatency -f mpegts -codec:v libx264 -preset slow -crf 28 -pix_fmt yuv420p pipe:1", crop.x_offset, crop.y_offset, crop.width, crop.height)
             }
             None => {
-                format!("-f gdigrab -framerate 30 -i desktop -capture_cursor 1 -f mpegts")
+                format!("-f gdigrab -framerate 30 -i desktop -f mpegts pipe:1")
             }
         }
     }
@@ -278,4 +281,60 @@ pub fn get_ffmpeg_command(screen_index:usize, crop: Option<CropArea>) -> String 
         }
     }
 
+}
+
+
+pub fn read_hotkeys()  -> io::Result<(String, String, String)> {
+    let file = File::open(HOTKEYS_CONFIG_PATH)?;
+    let start_reader = BufReader::new(&file);
+
+    // Read the first line of the file (savepath)
+    let start = match start_reader.lines().next() {
+        Some(Ok(path)) => path,
+        _ => "h".to_string(),
+    };
+
+    // Re-open the file using a new BufReader
+    let file = File::open(HOTKEYS_CONFIG_PATH)?;
+    let stop_reader = BufReader::new(&file);
+
+    // Read the second line of the file (shortcut)
+    let stop = match stop_reader.lines().nth(1) {
+        Some(Ok(shortcut)) => shortcut,
+        Some(Err(_err)) => {
+            "j".to_string()
+        }
+        None => {
+            "j".to_string()
+        }
+    };
+
+    // Re-open the file using a new BufReader
+    let file = File::open(HOTKEYS_CONFIG_PATH)?;
+    let clear_reader = BufReader::new(&file);
+
+    // Read the second line of the file (shortcut)
+    let clear = match clear_reader.lines().nth(2) {
+        Some(Ok(shortcut)) => shortcut,
+        Some(Err(_err)) => {
+            "k".to_string()
+        }
+        None => {
+            "k".to_string()
+        }
+    };
+
+    Ok((start, stop, clear))
+}
+
+pub fn save_hotkeys(key1: &str, key2: &str, key3: &str) -> io::Result<()> {
+    // Apri il file in modalità scrittura (truncando il contenuto)
+    let mut file = File::create(HOTKEYS_CONFIG_PATH)?;
+
+    // Scrivi ogni stringa su una nuova riga
+    writeln!(file, "{}", key1)?;
+    writeln!(file, "{}", key2)?;
+    writeln!(file, "{}", key3)?;
+
+    Ok(())
 }
