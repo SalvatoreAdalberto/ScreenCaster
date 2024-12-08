@@ -46,15 +46,30 @@ impl AppState {
     pub fn stop(&mut self) {
         if self.is_sharing {
             self.streaming_server.stop(); // Ferma la registrazione
-            println!("Registrazione fermata!");
+            if let Some(ref mut std) = self.annotation_stdin {
+                if writeln!(std, "quit").is_ok() {
+                    println!("Annotation closed");
+                    self.annotation_stdin = None;
+                } else {
+                    eprintln!("Lo stdin è chiuso.");
+                    self.annotation_stdin = None;
+                }
+            } else {
+                eprintln!("Lo stdin non è disponibile.");
+            }
         }
     }
 
     pub fn clear(&mut self) {
-        if self.is_drawing{
-            let mut std = self.annotation_stdin.as_mut().unwrap();
-            writeln!(std, "clear").unwrap();
-            println!("Annotation cleared");
+        if let Some(ref mut std) = self.annotation_stdin {
+            if writeln!(std, "clear").is_ok() {
+                println!("Annotation cleared");
+            } else {
+                eprintln!("Lo stdin è chiuso.");
+                self.annotation_stdin = None;
+            }
+        } else {
+            eprintln!("Lo stdin non è disponibile.");
         }
     }
 }

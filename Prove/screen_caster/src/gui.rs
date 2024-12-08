@@ -9,6 +9,7 @@ use std::process::{Child, Command as Command2, Output, Stdio};
 use std::collections::HashMap;
 use crate::streaming_client::{StreamingClient, VideoPlayerMessage};
 use iced::window::Event;
+use std::io::Write;
 
 // Definiamo i messaggi dell'applicazione
 #[derive(Debug, Clone)]
@@ -133,7 +134,6 @@ impl Application for ScreenCaster {
 
     fn update(&mut self, message: Message) -> Command<Message> {
         let mut app_state = self.app_state.lock().unwrap();
-        println!("{:?}", app_state.is_sharing);
         match message {
             Message::GoToShareScreen => {
                 self.state = AppStateEnum::SelectScreen;
@@ -160,7 +160,7 @@ impl Application for ScreenCaster {
                 println!("Screen casting avviato!");
             }
             Message::StopCasting => {
-                app_state.streaming_server.stop(); // Ferma la registrazione
+                app_state.stop(); // Ferma la registrazione
                 println!("Screen casting fermato!");
             }
             Message::GoBackHome => {
