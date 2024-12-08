@@ -45,7 +45,8 @@ pub enum Message {
 #[derive(Debug, Clone, Copy)]
 pub enum AppStateEnum {
     Home,
-    Sharing,
+    StartSharing,
+    IsSharing,
     Connect,
     ChangeHotKeys,
     Watching,
@@ -153,7 +154,7 @@ impl Application for ScreenCaster {
                         .output()
                         .expect("Non è stato possibile avviare l'overlay crop");
                 }
-                self.state = AppStateEnum::Sharing;
+                self.state = AppStateEnum::StartSharing;
             }
             Message::StartCasting => {
                 match app_state.streaming_server.start(self.selected_screen, self.share_mode){
@@ -164,6 +165,7 @@ impl Application for ScreenCaster {
             }
             Message::StopCasting => {
                 app_state.stop(); // Ferma la registrazione
+                self.state = AppStateEnum::StartSharing;
                 println!("Screen casting fermato!");
             }
             Message::GoBackHome => {
@@ -316,7 +318,7 @@ impl Application for ScreenCaster {
                         .stdin(Stdio::piped())
                         .spawn()
                         .expect("Non è stato possibile avviare l'annotation tool"));
-                    app_state.annotation_stdin = child.unwrap().stdin;
+                    app_state.update_stdin(child.unwrap().stdin.unwrap());
                 }
             }
             Message::SelectCropArea => {
@@ -324,7 +326,7 @@ impl Application for ScreenCaster {
                 let mut real_path = "".to_string();
                 real_path = exe_path.display().to_string() + r"/overlay_crop/target/release/overlay_crop";
                 Command2::new(real_path)
-                    .arg("t")
+                    .arg(app_state.screen_index.to_string())
                     .output()
                     .expect("Non è stato possibile avviare l'overlay crop");
             }
@@ -351,7 +353,8 @@ impl Application for ScreenCaster {
     fn view(&self) -> Element<Message> {
         match self.state {
             AppStateEnum::Home => self.view_home(),
-            AppStateEnum::Sharing => self.view_sharing(),
+            AppStateEnum::StartSharing => self.view_start_sharing(),
+            AppStateEnum::IsSharing => self.view_is_sharing(),
             AppStateEnum::Connect => self.view_connect(),
             AppStateEnum::ChangeHotKeys => self.view_change_hotkey(),
             AppStateEnum::Watching => self.view_watching(),
@@ -483,7 +486,36 @@ impl ScreenCaster {
     }
 
     // Vista per la condivisione dello schermo
-    fn view_sharing(&self) -> Element<Message> {
+    fn view_start_sharing(&self) -> Element<Message> {
+        let content = Column::new()
+            .spacing(20)
+            .align_items(Alignment::Center)
+            .push(Text::new("Condividi il tuo schermo").size(30))
+            .push(
+                Row::new()
+                    .spacing(20)
+                    .align_items(Alignment::Center)
+                    .push(
+                        Button::new(Text::new("Avvia Screen Casting"))
+                            .padding(10)
+                            .on_press(Message::StartCasting),
+                    ),
+            )
+            .push(
+                Button::new(Text::new("Torna alla Home"))
+                    .padding(10)
+                    .on_press(Message::GoBackHome),
+            );
+
+        Container::new(content)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center_x()
+            .center_y()
+            .into()
+    }
+
+    fn view_is_sharing(&self) -> Element<Message> {
         let content = Column::new()
             .spacing(20)
             .align_items(Alignment::Center)
@@ -493,25 +525,15 @@ impl ScreenCaster {
                     .spacing(20)
                     .align_items(Alignment::Center)
                     .push(
-                        Button::new(Text::new("Avvia Screen Casting"))
-                            .padding(10)
-                            .on_press(Message::StartCasting),
-                    )
-                    .push(
                         Button::new(Text::new("Ferma Screen Casting"))
                             .padding(10)
                             .on_press(Message::StopCasting),
                     )
                     .push(
-                        Button::new(Text::new("Attiva modalità annotazione"))
+                        Button::new(Text::new("Annotation tool"))
                             .padding(10)
                             .on_press(Message::ToggleAnnotationMode),
                     ),
-            )
-            .push(
-                Button::new(Text::new("Torna alla Home"))
-                    .padding(10)
-                    .on_press(Message::GoBackHome),
             );
 
         Container::new(content)
