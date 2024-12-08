@@ -19,7 +19,6 @@ pub struct AppState {
     pub(crate) share_mode: ShareMode, // Modalità di condivisione
     pub(crate) screen_index: usize, // Indice dello schermo da condividere
     pub(crate) annotation_stdin: Option<std::process::ChildStdin>, // Stdin per l'invio delle annotazioni
-    pub(crate) is_drawing: bool, // Indica se siamo in modalità di disegno
 }
 
 impl AppState {
@@ -30,7 +29,6 @@ impl AppState {
             share_mode: ShareMode::Fullscreen,
             screen_index: 1,
             annotation_stdin: None,
-            is_drawing: false,
         }
     }
 
@@ -81,6 +79,20 @@ impl AppState {
             }
         }
         self.annotation_stdin = Some(stdin);
+    }
+
+    pub fn close_annotation(&mut self) {
+        if let Some(ref mut std) = self.annotation_stdin {
+            if writeln!(std, "quit").is_ok() {
+                println!("Annotation closed");
+                self.annotation_stdin = None;
+            } else {
+                eprintln!("Lo stdin è chiuso.");
+                self.annotation_stdin = None;
+            }
+        } else {
+            eprintln!("Lo stdin non è disponibile.");
+        }
     }
 }
 
