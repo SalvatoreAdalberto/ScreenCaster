@@ -26,7 +26,8 @@ pub enum Message {
     ClearHotkeyChanged(String),
     GoToChangeHotKeys,
     SaveHotKeys,
-    ToggleAnnotationMode,
+    StartAnnotationMode,
+    StopAnnotationMode,
     SelectCropArea,
     TryConnect,
     Connecting,
@@ -76,6 +77,7 @@ pub struct ScreenCaster {
     streaming_client: Option<StreamingClient>,
     screen_index: usize,
     share_mode: ShareMode,
+    is_drawing: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -124,6 +126,7 @@ impl Application for ScreenCaster {
                 streaming_client: None,
                 screen_index: 1,
                 share_mode: ShareMode::Fullscreen,
+                is_drawing: false,
             },
             Command::none(),
         )
@@ -302,8 +305,8 @@ impl Application for ScreenCaster {
             Message::ClearHotkeyChanged(key) => {
                 self.clear_shortcut = key
             }
-            Message::ToggleAnnotationMode => {
-                app_state.is_drawing = true;
+            Message::StartAnnotationMode => {
+                self.is_drawing = true;
                 if self.handle_annotation_tool.is_some() {
                     self.handle_annotation_tool.as_mut().unwrap().kill().unwrap();
                     self.handle_annotation_tool = None;
@@ -318,6 +321,10 @@ impl Application for ScreenCaster {
                         .expect("Non è stato possibile avviare l'annotation tool"));
                     app_state.update_stdin(child.unwrap().stdin.unwrap());
                 }
+            }
+            Message::StopAnnotationMode => {
+                self.is_drawing = false;
+                app_state.close_annotation();
             }
             Message::SelectCropArea => {
                 let exe_path = utils::get_project_src_path();
@@ -528,9 +535,15 @@ impl ScreenCaster {
                             .on_press(Message::StopCasting),
                     )
                     .push(
-                        Button::new(Text::new("Annotation tool"))
-                            .padding(10)
-                            .on_press(Message::ToggleAnnotationMode),
+                        if self.is_drawing {
+                            Button::new(Text::new("Stop annotation tool"))
+                                .padding(10)
+                                .on_press(Message::StopAnnotationMode)
+                        } else {
+                            Button::new(Text::new("Start annotation tool"))
+                                .padding(10)
+                                .on_press(Message::StartAnnotationMode)
+                        },
                     ),
             );
 
