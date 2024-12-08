@@ -37,7 +37,6 @@ impl AppState {
     pub fn start(&mut self) {
         if self.is_sharing {
             self.streaming_server.start(self.screen_index, self.share_mode); // Avvia la registrazione
-            println!("Registrazione avviata!");
         } else {
             println!("Non siamo nella schermata di condivisione.");
         }
@@ -71,6 +70,17 @@ impl AppState {
         } else {
             eprintln!("Lo stdin non è disponibile.");
         }
+    }
+
+    pub fn update_stdin(&mut self, stdin: std::process::ChildStdin) {
+        if let Some(ref mut std) = self.annotation_stdin {
+            if writeln!(std, "quit").is_ok() {
+                println!("Annotation closed");
+            } else {
+                eprintln!("Lo stdin è chiuso.");
+            }
+        }
+        self.annotation_stdin = Some(stdin);
     }
 }
 
