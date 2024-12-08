@@ -741,5 +741,7 @@ impl ScreenCaster {
 }
 
 pub fn run_gui(app_state: Arc<Mutex<AppState>>, manager: Arc<Mutex<GlobalHotKeyManager>>, id1: Arc<Mutex<u32>>, id2: Arc<Mutex<u32>>, id3: Arc<Mutex<u32>>, hotkey_record: HotKey, hotkey_stop: HotKey, hotkey_clear: HotKey) {
+    let mut clone = app_state.clone();
     ScreenCaster::run(Settings::with_flags((app_state, manager, id1, id2, id3, hotkey_record, hotkey_stop, hotkey_clear))).expect("Failed to start application");
+    clone.lock().unwrap().stop();
 }

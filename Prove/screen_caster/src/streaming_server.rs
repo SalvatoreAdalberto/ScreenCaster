@@ -30,6 +30,7 @@ pub struct StreamingServer {
     handle: Option<Mutex<FfmpegChild>>,
     list_clients: Arc<Mutex<HashMap<String, Client>>>,
     control: Arc<(Mutex<bool>, Condvar)>, // Aggiunta per controllare la terminazione
+    threads: Vec<thread::JoinHandle<()>>,
 }
 
 #[derive(Debug)]
@@ -47,6 +48,7 @@ impl StreamingServer {
             handle: None,   
             list_clients: Arc::new(Mutex::new(HashMap::new())),
             control: Arc::new((Mutex::new(false), Condvar::new())), // Inizializzazione
+            threads: Vec::new(),
         }
     }
 
@@ -124,7 +126,7 @@ impl StreamingServer {
         listener_socket.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
 
         //LISTENER THREAD
-        thread::spawn(move || {
+        let h = thread::spawn(move || {
             let mut buffer = [0; BUFFER_SIZE];
             let (lock, cvar) = &*control;
 
@@ -188,8 +190,10 @@ impl StreamingServer {
             cvar.notify_all(); // Notifica che il listener è terminato
         });
 
+        self.threads.push(h);
+
         let list_tx_clients_clone2 = Arc::clone(&self.list_clients);
-        thread::spawn(move || {
+        let h = thread::spawn(move || {
             let (lock, cvar) = &*control_clone;
 
             loop {
@@ -212,6 +216,8 @@ impl StreamingServer {
             cvar.notify_all(); // Notifica che il sender è terminato
         });
 
+        self.threads.push(h);
+
         self.handle = Some(handle);
         println!("sender will be dropped now..");
         Ok(())
@@ -232,6 +238,10 @@ impl StreamingServer {
                 let mut terminate = lock.lock().unwrap();
                 *terminate = true;
                 cvar.notify_all(); // Notifica tutti i thread
+            }
+
+            for h in self.threads.drain(..) {
+                h.join().unwrap();
             }
 
             println!("Screen casting fermato!");
