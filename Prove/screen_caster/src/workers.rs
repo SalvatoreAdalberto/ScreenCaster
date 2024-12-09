@@ -156,11 +156,11 @@ impl FrameProcessorConstructor{
         let mut workers = Vec::new();
         let mut internal_txs_frame = Vec::new();
 
-        let (internal_tx_image, internal_rx_image) = bounded(3);
+        let (internal_tx_image, internal_rx_image) = bounded(5);
         let (terminate_sender, terminate_receiver) = bounded(1);
         
         for i in 0..n_workers{
-            let (internal_tx_frame, internal_rx_frame) = bounded(3);
+            let (internal_tx_frame, internal_rx_frame) = bounded(5);
             internal_txs_frame.push(internal_tx_frame);
             let worker = FrameProcessorWorker::new(
                     i, 
