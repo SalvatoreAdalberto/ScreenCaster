@@ -1,7 +1,7 @@
 use std::io::Write;
 use global_hotkey::{GlobalHotKeyEvent, HotKeyState, hotkey::{Code}};
 use std::sync::{Arc, Mutex};
-
+use std::time::Duration;
 #[cfg(target_os = "windows")]
 use winapi::um::winuser::{self, MSG};
 #[cfg(target_os = "windows")]
@@ -10,8 +10,14 @@ use winapi::shared::winerror::WAIT_TIMEOUT;
 use winapi::um::winbase::WAIT_OBJECT_0;
 use crate::streaming_server;
 use crate::gui::ShareMode;
+use crate::streaming_client::VideoPlayerMessage;
+use iced::{ Subscription, time as iced_time, Command, Element, Length};
 
-
+#[derive(Debug, Clone)]
+pub enum HotkeyMessage {
+    Start,
+    Stop,
+}
 
 pub struct AppState {
     pub(crate) is_sharing: bool, // Indica se siamo nella schermata di condivisione
@@ -19,6 +25,7 @@ pub struct AppState {
     pub(crate) share_mode: ShareMode, // Modalità di condivisione
     pub(crate) screen_index: usize, // Indice dello schermo da condividere
     pub(crate) annotation_stdin: Option<std::process::ChildStdin>, // Stdin per l'invio delle annotazioni
+    pub(crate) cast_started: bool,
 }
 
 impl AppState {
@@ -29,31 +36,24 @@ impl AppState {
             share_mode: ShareMode::Fullscreen,
             screen_index: 1,
             annotation_stdin: None,
+            cast_started: false,
         }
     }
 
     pub fn start(&mut self) {
-        if self.is_sharing {
+        if self.is_sharing && !self.cast_started {
             self.streaming_server.start(self.screen_index, self.share_mode); // Avvia la registrazione
+            self.cast_started = true;
         } else {
             println!("Non siamo nella schermata di condivisione.");
         }
     }
 
     pub fn stop(&mut self) {
-        if self.is_sharing {
+        if self.is_sharing && self.cast_started {
             self.streaming_server.stop(); // Ferma la registrazione
-            if let Some(ref mut std) = self.annotation_stdin {
-                if writeln!(std, "quit").is_ok() {
-                    println!("Annotation closed");
-                    self.annotation_stdin = None;
-                } else {
-                    eprintln!("Lo stdin è chiuso.");
-                    self.annotation_stdin = None;
-                }
-            } else {
-                eprintln!("Lo stdin non è disponibile.");
-            }
+            self.close_annotation();
+            self.cast_started = false;
         }
     }
 
@@ -92,6 +92,20 @@ impl AppState {
             }
         } else {
             eprintln!("Lo stdin non è disponibile.");
+        }
+    }
+
+    pub fn subscription(&mut self) -> Subscription<HotkeyMessage> {
+        if self.cast_started && self.is_sharing {
+            iced_time::every(Duration::from_secs_f32(0.1))
+                .map(|_| HotkeyMessage::Start)
+        }
+        else if !self.cast_started && self.is_sharing {
+            iced_time::every(Duration::from_secs_f32(0.1))
+                .map(|_| HotkeyMessage::Stop)
+        }
+        else {
+            Subscription::none()
         }
     }
 }

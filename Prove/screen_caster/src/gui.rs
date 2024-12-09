@@ -4,12 +4,13 @@ use crate::utils;
 use std::sync::{Arc, Mutex};
 use global_hotkey::GlobalHotKeyManager;
 use global_hotkey::hotkey::{HotKey, Modifiers};
-use crate::hotkeys::{AppState, parse_key_code};
+use crate::hotkeys::{AppState, parse_key_code, HotkeyMessage};
 use std::process::{Child, Command as Command2, Output, Stdio};
 use std::collections::HashMap;
 use crate::streaming_client::{StreamingClient, VideoPlayerMessage};
 use iced::window::Event;
 use std::io::Write;
+use iced::subscription;
 
 // Definiamo i messaggi dell'applicazione
 #[derive(Debug, Clone)]
@@ -40,6 +41,7 @@ pub enum Message {
     PickList(usize),
     ScreenSelected,
     ModeSelected(ShareMode),
+    HotkeyMessage(HotkeyMessage),
 }
 
 // Stati possibili dell'applicazione
@@ -350,6 +352,16 @@ impl Application for ScreenCaster {
                 app_state.share_mode = mode;
                 self.share_mode = mode;
             }
+            Message::HotkeyMessage(message) => {
+                match message {
+                    HotkeyMessage::Start => {
+                        self.state = AppStateEnum::IsSharing;
+                    }
+                    HotkeyMessage::Stop => {
+                        self.state = AppStateEnum::StartSharing;
+                    }
+                }
+            }
         }
 
         Command::none()
@@ -373,8 +385,17 @@ impl Application for ScreenCaster {
 
     fn subscription(&self) -> Subscription<Message> {
         match self.state {
-            AppStateEnum::Watching => {if let Some(sc) = self.streaming_client.as_ref() { sc.subscription().map(Message::VideoPlayerMessage)}
-            else{ Subscription::none()}},
+            AppStateEnum::Watching => {
+                if let Some(sc) = self.streaming_client.as_ref() {
+                    sc.subscription().map(Message::VideoPlayerMessage)
+                }
+                else{
+                    Subscription::none()
+                }},
+            AppStateEnum::IsSharing | AppStateEnum::StartSharing =>{
+                let mut app_state = self.app_state.lock().unwrap();
+                app_state.subscription().map(Message::HotkeyMessage)
+            }
             _ => {Subscription::none()}
         }
     }
