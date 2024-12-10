@@ -5,9 +5,9 @@ use ffmpeg_sidecar::{command::FfmpegCommand, event::FfmpegEvent::OutputFrame, ev
 use std::net::UdpSocket;
 use local_ip_address::local_ip;
 
+use std::sync::{Arc, Mutex, atomic::AtomicBool, atomic::Ordering};
 use std::{io, thread};
 use std::io::{Error};
-use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{self, Receiver, Sender};
 use crossbeam_channel::{bounded, Sender as CrossbeamSender, Receiver as CrossbeamReceiver};
 
@@ -15,13 +15,13 @@ use std::process::{ChildStdin};
 use std::io::{Read, Write, BufWriter};
 use std::io::ErrorKind;
 use chrono::Local;
-use std::time::{Duration, Instant};
-use crate::workers;
+use std::time::{Instant, Duration};
+use crate::workers::FrameProcessorConstructor;
 
 use iced::{ Subscription, time as iced_time, Command, Element, Length};
 use iced::widget::{Button, image::Handle, image::Image, Text};
 
-
+const LOADING_IMG: &str = "—Pngtree—blue circular progress bar page_6476398.png";
 const BUFFER_SIZE: usize = 1024;
 
 #[derive(Debug, Clone)]
@@ -36,7 +36,8 @@ pub enum VideoPlayerMessage {
 pub enum StreamingClientStateEnum{
     Instantiated,
     Connected,
-    Streaming,
+    NoStreamAvailable,
+
 }
 
 pub struct StreamingClient {
@@ -67,7 +68,7 @@ impl StreamingClient {
 
         //Define socket
         let socket = Arc::new(UdpSocket::bind(format!("{ip_address}:3040")).expect("Failed to bind socket"));  // Il client bind sulla porta 8080
-        let current_frame = Handle::from_path("—Pngtree—blue circular progress bar page_6476398.png");
+        let current_frame = Handle::from_path(LOADING_IMG);
        
         Self {
             current_frame,
@@ -119,7 +120,7 @@ impl StreamingClient {
             }
         }
     }
-
+    
     fn manage_incoming_packets(&mut self){
         let mut buffer = [0; BUFFER_SIZE];
         //Define playback channels
@@ -140,6 +141,8 @@ impl StreamingClient {
         self.receiver_image = Some(receiver_image);
         self.rx_record = Some(rx_record);
         self.is_recording = Some(is_recording);
+        let mut stop_receiving = Arc::new(AtomicBool::new(false));
+        let mut stop_receiving_ffpmeg = stop_receiving.clone();
 
         // SOCKET MANAGER
         thread::spawn(move || {
@@ -149,7 +152,7 @@ impl StreamingClient {
                         let data = &buffer[..number_of_bytes];
                         if let Err(err) = tx_playback.send(data.to_vec()) {
                             eprintln!("Failed to send data to playback: {}", err);
-                            thread::sleep(Duration::from_secs(2));
+                            break;
                         }
                         let is_recording_guard = is_recording1.lock().unwrap();
                         if *is_recording_guard {
@@ -168,7 +171,7 @@ impl StreamingClient {
                     }
                 }
             }
-            println!("Ending thread1");
+            println!("Ending thread-socketManager-1");
         });
         // PLAYBACK
         thread::spawn(move || {
@@ -183,53 +186,68 @@ impl StreamingClient {
             let mut stdin = ffmpeg_command.take_stdin().unwrap();
             let mut writer = BufWriter::new(&mut stdin);
             //DECODE AND PLAY
-            let w_manager = Arc::new(workers::WorkersManger::new(5, Arc::new(Mutex::new(receiver_frame)), sender_image));
-            let w_manager2 = w_manager.clone();
+            let  ( dispatcher, mut aggregator )= FrameProcessorConstructor::new(5, receiver_frame, sender_image);
             thread::spawn(move || {
                     // Itera sugli eventi di output di ffmpeg
-                    ffmpeg_command.iter().expect("Errore iterando i frame").for_each(|e| {
+                    for e in ffmpeg_command.iter().expect("Errore iterando i frame"){
                         match e {
-                            OutputFrame(frame) => sender_frame.send(frame).unwrap(),                
-                            _ => {},//println!("Event: {:?}", e),
+                            OutputFrame(frame) => {
+                                match sender_frame.send(frame){
+                                    Ok(_) => {},
+                                    Err(_) => {break},
+                                }
+                            },                
+                            _ => {},
                         }
-                        //println!("len: {:?} ", e);
-                        
-                    });
-                    println!("Ending thread2");
+                    };
+
+
+                    drop(sender_frame);
+                    stop_receiving.store(true, Ordering::Relaxed);
+                    println!("Ending thread-externalSendFrame-2");
 
                 });
             thread::spawn(move || {
-                w_manager2.execute();
-                println!("Ending thread3");
-
+                dispatcher.execute();
+                println!("Ending thread-executeManager-3");
             });
             thread::spawn(move ||{
-                w_manager.activate();
-                println!("Ending thread4");
-
+                aggregator.activate();
+                aggregator.join_workers();
+                println!("Ending thread-activateManager-4");
             });
-
-            loop {
+            
+            while !stop_receiving_ffpmeg.load(Ordering::Relaxed) {
                 match rx_playback.recv() {
                     Ok(data) => {
                         writer.write_all(&data).unwrap();
+                        
                     }
-                    Err(err) => {
-                        eprintln!("Failed to receive data playback: {}", err);
+                  Err(err) => {
+                        //eprintln!("Failed to receive data playback: {}", err);
                         break;
                     }
                 }
             }
-            println!("Ending thread5");
+            drop(rx_playback);
+            writer.write_all(b"").unwrap();
 
-        });
+            println!("Ending thread-ffmpegStdinWriter-5");
+           });
     }
 
     fn on_exit(&mut self) {
-        let socket = Arc::new(UdpSocket::bind(format!("{}:3041", self.own_ip)).expect("Failed to bind socket"));  
+        let socket = Arc::new(UdpSocket::bind(format!("{}:3043", self.own_ip)).expect("Failed to bind socket"));  
         let mut buffer = [0; BUFFER_SIZE];
         let message = format!("STOP\n{}:3040", self.own_ip);
+        socket.set_read_timeout(Some(Duration::from_secs_f32(0.5))).expect("Failed to set read timeout");
+        let start = Instant::now();
+        println!("Asking to stop connection");
         loop{
+            if start.elapsed() > Duration::from_secs(2) {
+                eprintln!("Connection timeout");
+                break;
+            }
             socket.send_to(&message.as_bytes(), &self.target_address);
             match socket.recv(&mut buffer) {
                 Ok(number_of_bytes) => {
@@ -332,51 +350,42 @@ impl StreamingClient {
     }
 
     pub fn update(&mut self, message: VideoPlayerMessage) -> Option<VideoPlayerMessage> {
-        return match message {
-            VideoPlayerMessage::Connect => {
-                match self.start_connection() {
-                    None => {
-                        self.manage_incoming_packets();
-                        self.state = StreamingClientStateEnum::Connected;
-                        None
-                    }
-                    Some(_) => {
-                        Some(VideoPlayerMessage::Exit)
+            return match message {
+                VideoPlayerMessage::Connect => {
+                    match self.start_connection() {
+                        None => {
+                            self.manage_incoming_packets();
+                            self.state = StreamingClientStateEnum::Connected;
+                            None
+                        }
+                        Some(_) => {
+                            Some(VideoPlayerMessage::Exit)
+                        }
                     }
                 }
-            }
-            VideoPlayerMessage::NextFrame => {
-                if let Some(image) = self.update_image() {
-                    match image.data() {
-                        iced::advanced::image::Data::Rgba { width, height, pixels } => {
-                            println!("{} {} {}", width, height, pixels.len());
-                        },
-                        iced::advanced::image::Data::Bytes(bytes) => {
-                            println!("{}", bytes.len());
-                        },
-                        _ => {}
-                    };
-                    self.current_frame = image;
+                VideoPlayerMessage::NextFrame => {
+                    if let Some(image) = self.update_image() {
+                        self.current_frame = image;
+                    }
+                    None
                 }
-                None
-            }
-            VideoPlayerMessage::Exit => {
-                if let Some(_) = self.pid_record {
+                VideoPlayerMessage::Exit => {
+                    if let Some(_) = self.pid_record {
+                        self.stop_record();
+                    }
+                    self.on_exit();
+                    None
+                }
+                VideoPlayerMessage::StartRecord => {
+                    self.start_record();
+                    None
+                }
+                VideoPlayerMessage::StopRecord => {
                     self.stop_record();
+                    None
                 }
-                self.on_exit();
-                None
-            }
-            VideoPlayerMessage::StartRecord => {
-                self.start_record();
-                None
-            }
-            VideoPlayerMessage::StopRecord => {
-                self.stop_record();
-                None
             }
         }
-    }
     
     pub fn view_video(&self) -> Element<VideoPlayerMessage>{
         Image::new(self.current_frame.clone())

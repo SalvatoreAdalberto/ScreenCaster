@@ -21,7 +21,7 @@ pub enum HotkeyMessage {
 
 pub struct AppState {
     pub(crate) is_sharing: bool, // Indica se siamo nella schermata di condivisione
-    pub(crate) streaming_server: streaming_server::StreamingServer, // Oggetto per la gestione della registrazione
+    pub(crate) streaming_server: Option<streaming_server::StreamingServer>, // Oggetto per la gestione della registrazione
     pub(crate) share_mode: ShareMode, // Modalità di condivisione
     pub(crate) screen_index: usize, // Indice dello schermo da condividere
     pub(crate) annotation_stdin: Option<std::process::ChildStdin>, // Stdin per l'invio delle annotazioni
@@ -32,7 +32,7 @@ impl AppState {
     pub fn new() -> Self {
         AppState {
             is_sharing: false,
-            streaming_server: streaming_server::StreamingServer::new(),
+            streaming_server: None,
             share_mode: ShareMode::Fullscreen,
             screen_index: 1,
             annotation_stdin: None,
@@ -42,7 +42,10 @@ impl AppState {
 
     pub fn start(&mut self) {
         if self.is_sharing && !self.cast_started {
-            self.streaming_server.start(self.screen_index, self.share_mode); // Avvia la registrazione
+            if self.streaming_server.is_none(){
+                self.streaming_server = Some(streaming_server::StreamingServer::new());
+            }
+            self.streaming_server.as_mut().unwrap().start(self.screen_index, self.share_mode); // Avvia la registrazione
             self.cast_started = true;
         } else {
             println!("Non siamo nella schermata di condivisione.");
@@ -51,7 +54,10 @@ impl AppState {
 
     pub fn stop(&mut self) {
         if self.is_sharing && self.cast_started {
-            self.streaming_server.stop(); // Ferma la registrazione
+            if self.streaming_server.is_some(){
+                self.streaming_server.as_mut().unwrap().stop(); // Ferma la registrazione
+                self.streaming_server = None;
+            }
             self.close_annotation();
             self.cast_started = false;
         }
@@ -237,4 +243,3 @@ pub fn parse_key_code(key: &str) -> Option<Code> {
         _ => None,
     }
 }
-

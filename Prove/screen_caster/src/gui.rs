@@ -169,7 +169,6 @@ impl Application for ScreenCaster {
             Message::StopCasting => {
                 app_state.stop(); // Ferma la registrazione
                 self.state = AppStateEnum::StartSharing;
-                println!("Screen casting fermato!");
             }
             Message::GoBackHome => {
                 self.state = AppStateEnum::Home;
