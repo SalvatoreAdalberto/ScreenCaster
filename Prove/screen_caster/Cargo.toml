@@ -15,6 +15,7 @@ egui = "*"
 ipnetwork = "*"
 if-addrs = "0.6.4"
 gif = "0.13.1"
+gif-dispose = "*"
 chrono = "*"
 crossbeam-channel = "*"
 crossbeam-utils = "*"
@@ -25,3 +26,5 @@ winapi = "0.3.9"
 ipnet = "*"
 ipconfig = "*"
 pnet = "*"
+rgb = {version = "*", features = ["as-bytes"]}
+

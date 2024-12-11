@@ -638,28 +638,28 @@ impl ScreenCaster {
     fn view_watching(&self) -> Element<Message> {
         let content;
         if let Some(sc) = self.streaming_client.as_ref(){
-            let video_player = sc.view_video().map(Message::VideoPlayerMessage);
-            let record_button = sc.view_record_button().map(Message::VideoPlayerMessage);
-            content = Column::new()
-                .push(video_player)
-                .push(
-                    Row::new()
+            let mut row = Row::new()
                         .spacing(20)
+                        .padding(10)
                         .align_items(Alignment::Center)
                         .push(
                             Button::new(Text::new("Stop watching"))
                                 .padding(10)
                                 .width(Length::Fixed(200.0))
                                 .on_press(Message::StopConnection),
-                        )
-                        .push(
-                            record_button
-                        )
-                        .align_items(Alignment::Center)
-                        .padding(10),
+                        );
+                        
+            let video_player = sc.view_video().map(Message::VideoPlayerMessage);
+            let optional_button = sc.view_record_button();
+            if let Some(record_button) = optional_button{
+                row = row.push(record_button.map(Message::VideoPlayerMessage));
+            }
+            content = Column::new()
+                .push(video_player)
+                .push(
+                    row
                 )
                 .align_items(Alignment::Center);
-
 
         }else{
             content = Column::new()

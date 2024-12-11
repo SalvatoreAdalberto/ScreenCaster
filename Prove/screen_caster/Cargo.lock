@@ -2341,6 +2341,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "gif-dispose"
+version = "5.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5e1aa07391f3d9c279f388cea6faf291555dd891df59bed01d4378583df946ac"
+dependencies = [
+ "gif 0.13.1",
+ "imgref",
+ "rgb",
+]
+
+[[package]]
 name = "gimli"
 version = "0.31.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5589,6 +5600,7 @@ dependencies = [
  "egui",
  "ffmpeg-sidecar",
  "gif 0.13.1",
+ "gif-dispose",
  "global-hotkey",
  "iced",
  "if-addrs",
@@ -5598,6 +5610,7 @@ dependencies = [
  "ipnetwork",
  "local-ip-address",
  "pnet",
+ "rgb",
  "tokio",
  "winapi",
  "winit 0.30.5",
