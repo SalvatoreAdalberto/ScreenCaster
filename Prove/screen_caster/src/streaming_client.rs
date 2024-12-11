@@ -1,13 +1,13 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use ffmpeg_sidecar::{command::FfmpegCommand, event::FfmpegEvent::OutputFrame, event::OutputVideoFrame};
+use ffmpeg_sidecar::{command::FfmpegCommand, event::FfmpegEvent, event::OutputVideoFrame};
 
 use std::net::UdpSocket;
 use local_ip_address::local_ip;
 
+use std::sync::{Arc, Mutex, atomic::AtomicBool, atomic::Ordering};
 use std::{io, thread};
 use std::io::{Error};
-use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{self, Receiver, Sender};
 use crossbeam_channel::{bounded, Sender as CrossbeamSender, Receiver as CrossbeamReceiver};
 
@@ -15,13 +15,14 @@ use std::process::{ChildStdin};
 use std::io::{Read, Write, BufWriter};
 use std::io::ErrorKind;
 use chrono::Local;
-use std::time::{Duration, Instant};
-use crate::workers;
+use std::time::{Instant, Duration};
+use crate::workers::FrameProcessorConstructor;
+use crate::gif_widget::{GifPlayer, GifPlayerMessage};
 
 use iced::{ Subscription, time as iced_time, Command, Element, Length};
 use iced::widget::{Button, image::Handle, image::Image, Text};
 
-
+const LOADING_IMG: &str = "—Pngtree—blue circular progress bar page_6476398.png";
 const BUFFER_SIZE: usize = 1024;
 
 #[derive(Debug, Clone)]
@@ -30,13 +31,18 @@ pub enum VideoPlayerMessage {
     NextFrame,
     Exit,
     StartRecord,
-    StopRecord
+    StopRecord,
+    StreamAvailable,
+    NoStreamAvailable,
+    NoConnection,
+    GifPlayerMessage(GifPlayerMessage),
 }
 
 pub enum StreamingClientStateEnum{
-    Instantiated,
-    Connected,
+    NotConnected,
+    ConnectedNoStreaming,
     Streaming,
+    Retry,
 }
 
 pub struct StreamingClient {
@@ -49,6 +55,9 @@ pub struct StreamingClient {
     own_ip: String,
     current_frame: Handle,
     socket: Arc<UdpSocket>,
+    tx_connection_status: Option<Sender<VideoPlayerMessage>>,
+    rx_connection_status: Option<Receiver<VideoPlayerMessage>>,
+    gif_widget: Option<GifPlayer>,
     state: StreamingClientStateEnum,
 }
 
@@ -67,7 +76,7 @@ impl StreamingClient {
 
         //Define socket
         let socket = Arc::new(UdpSocket::bind(format!("{ip_address}:3040")).expect("Failed to bind socket"));  // Il client bind sulla porta 8080
-        let current_frame = Handle::from_path("—Pngtree—blue circular progress bar page_6476398.png");
+        let current_frame = Handle::from_path(LOADING_IMG);
        
         Self {
             current_frame,
@@ -79,7 +88,10 @@ impl StreamingClient {
             target_address,
             own_ip: ip_address,
             socket,
-            state: StreamingClientStateEnum::Instantiated,
+            tx_connection_status: None,
+            rx_connection_status: None,
+            gif_widget: Some(GifPlayer::new()),
+            state: StreamingClientStateEnum::NotConnected,
         }
     }
 
@@ -92,34 +104,45 @@ impl StreamingClient {
         }
     }
 
-    fn start_connection(&mut self) -> Option<VideoPlayerMessage> {
+    fn start_connection(&mut self) -> (Sender<VideoPlayerMessage>, Receiver<VideoPlayerMessage>) {
+
         let mut buffer = [0; BUFFER_SIZE];
         let message = "START".as_bytes();
-        self.socket.set_read_timeout(Some(Duration::from_secs(1))).expect("Failed to set read timeout");
+        let target = self.target_address.clone();
+        let (tx_connection_status, rx_connection_status) = mpsc::channel();
+        let socket_clone = self.socket.clone();
+        socket_clone.set_read_timeout(Some(Duration::from_secs(1))).expect("Failed to set read timeout");
         let start = Instant::now();
+        let tx_sc = tx_connection_status.clone();
         // INIT CONNECTION
-        loop {
-            if start.elapsed() > Duration::from_secs(10) {
-                eprintln!("Connection timeout");
-                return Some(VideoPlayerMessage::Exit);
-            }
-            match self.socket.send_to(&message, &self.target_address) {
-                Ok(_) => {
-                    match self.socket.recv(&mut buffer) {
-                        Ok(number_of_bytes) => {
-                            let data = &buffer[..number_of_bytes];
-                            if data == "OK".as_bytes() {
-                                return None;
-                            }
-                        }
-                        _ => {}
-                    }
+        thread::spawn(move||{
+            loop {
+                if start.elapsed() > Duration::from_secs(10) {
+                    eprintln!("Connection timeout");
+                    tx_sc.send(VideoPlayerMessage::NoConnection).unwrap();
+                    break;
                 }
-                _ => {}
+                match socket_clone.send_to(&message, &target) {
+                    Ok(_) => {
+                        match socket_clone.recv(&mut buffer) {
+                            Ok(number_of_bytes) => {
+                                let data = &buffer[..number_of_bytes];
+                                if data == "OK".as_bytes() {
+                                    tx_sc.send(VideoPlayerMessage::NoStreamAvailable).unwrap();
+                                    break;
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    _ => {}
+                }
             }
-        }
-    }
+        }); 
 
+       (tx_connection_status, rx_connection_status)
+    }
+    
     fn manage_incoming_packets(&mut self){
         let mut buffer = [0; BUFFER_SIZE];
         //Define playback channels
@@ -140,6 +163,11 @@ impl StreamingClient {
         self.receiver_image = Some(receiver_image);
         self.rx_record = Some(rx_record);
         self.is_recording = Some(is_recording);
+        let stop_receiving = Arc::new(AtomicBool::new(false));
+        let stop_receiving_ffpmeg = stop_receiving.clone();
+
+        let tx_sm = self.tx_connection_status.as_ref().unwrap().clone();
+        let tx_pb = self.tx_connection_status.as_ref().unwrap().clone();
 
         // SOCKET MANAGER
         thread::spawn(move || {
@@ -149,7 +177,7 @@ impl StreamingClient {
                         let data = &buffer[..number_of_bytes];
                         if let Err(err) = tx_playback.send(data.to_vec()) {
                             eprintln!("Failed to send data to playback: {}", err);
-                            thread::sleep(Duration::from_secs(2));
+                            break;
                         }
                         let is_recording_guard = is_recording1.lock().unwrap();
                         if *is_recording_guard {
@@ -162,13 +190,13 @@ impl StreamingClient {
                         }
                         
                     }
-                    Err(err) => {
-                        eprintln!("Failed to receive data: {}", err);
+                    Err(_) => {
+                        tx_sm.send(VideoPlayerMessage::NoConnection);
                         break;
                     }
                 }
             }
-            println!("Ending thread1");
+            println!("Ending thread-socketManager-1");
         });
         // PLAYBACK
         thread::spawn(move || {
@@ -183,53 +211,72 @@ impl StreamingClient {
             let mut stdin = ffmpeg_command.take_stdin().unwrap();
             let mut writer = BufWriter::new(&mut stdin);
             //DECODE AND PLAY
-            let w_manager = Arc::new(workers::WorkersManger::new(5, Arc::new(Mutex::new(receiver_frame)), sender_image));
-            let w_manager2 = w_manager.clone();
+            let  ( dispatcher, mut aggregator )= FrameProcessorConstructor::new(5, receiver_frame, sender_image);
             thread::spawn(move || {
                     // Itera sugli eventi di output di ffmpeg
-                    ffmpeg_command.iter().expect("Errore iterando i frame").for_each(|e| {
+                    for e in ffmpeg_command.iter().expect("Errore iterando i frame"){
                         match e {
-                            OutputFrame(frame) => sender_frame.send(frame).unwrap(),                
-                            _ => {},//println!("Event: {:?}", e),
+                            FfmpegEvent::OutputFrame(frame) => {
+                                match sender_frame.send(frame){
+                                    Ok(_) => {},
+                                    Err(_) => {break},
+                                }
+                            },     
+                            FfmpegEvent::ParsedOutputStream(_) => {
+                                tx_pb.send(VideoPlayerMessage::StreamAvailable).unwrap();
+                            }           
+                            _ => {},
                         }
-                        //println!("len: {:?} ", e);
-                        
-                    });
-                    println!("Ending thread2");
+                    };
+
+
+                    drop(sender_frame);
+                    stop_receiving.store(true, Ordering::Relaxed);
+                    println!("Ending thread-externalSendFrame-2");
 
                 });
             thread::spawn(move || {
-                w_manager2.execute();
-                println!("Ending thread3");
-
+                dispatcher.execute();
+                println!("Ending thread-executeManager-3");
             });
             thread::spawn(move ||{
-                w_manager.activate();
-                println!("Ending thread4");
-
+                aggregator.activate();
+                aggregator.join_workers();
+                println!("Ending thread-activateManager-4");
             });
-
-            loop {
+            
+            while !stop_receiving_ffpmeg.load(Ordering::Relaxed) {
                 match rx_playback.recv() {
                     Ok(data) => {
                         writer.write_all(&data).unwrap();
+                        
                     }
-                    Err(err) => {
-                        eprintln!("Failed to receive data playback: {}", err);
+                  Err(err) => {
+                        //eprintln!("Failed to receive data playback: {}", err);
+                        
                         break;
                     }
                 }
             }
-            println!("Ending thread5");
+            drop(rx_playback);
+            writer.write_all(b"").unwrap();
 
-        });
+            println!("Ending thread-ffmpegStdinWriter-5");
+           });
     }
 
     fn on_exit(&mut self) {
-        let socket = Arc::new(UdpSocket::bind(format!("{}:3041", self.own_ip)).expect("Failed to bind socket"));  
+        let socket = Arc::new(UdpSocket::bind(format!("{}:3043", self.own_ip)).expect("Failed to bind socket"));  
         let mut buffer = [0; BUFFER_SIZE];
         let message = format!("STOP\n{}:3040", self.own_ip);
+        socket.set_read_timeout(Some(Duration::from_secs_f32(0.2))).expect("Failed to set read timeout");
+        let start = Instant::now();
+        println!("Asking to stop connection");
         loop{
+            if start.elapsed() > Duration::from_secs(1) {
+                eprintln!("Connection timeout");
+                break;
+            }
             socket.send_to(&message.as_bytes(), &self.target_address);
             match socket.recv(&mut buffer) {
                 Ok(number_of_bytes) => {
@@ -253,25 +300,26 @@ impl StreamingClient {
                 // Configura ffmpeg-sidecar per registrare
                 let mut ffmpeg_command_record = FfmpegCommand::new()
                     .input("pipe:0")
-                    .args(&["-c:v", "copy", "-y"])
+                    .args(&["-fflags","discardcorrupt","-c:v", "copy", "-y"])
                     .output(format!("{file_name}.mp4"))
                     .spawn()
                     .expect("Impossibile avviare ffmpeg per registrare");
-                let mut stderr_record = ffmpeg_command_record.take_stderr().unwrap();
+                
+                let stdin_mutex = Arc::new(Mutex::new(ffmpeg_command_record.take_stdin().unwrap()));
+                let stdin_mutex_clone = stdin_mutex.clone();
+                let mut stderr = ffmpeg_command_record.take_stderr().unwrap();
                 thread::spawn(move || {
-                    let mut buffer = [0; 256];
-                    loop {
-                        let n = stderr_record.read(&mut buffer).unwrap();
-                        if n == 0 {
+                    let mut buffer = [0;256];
+
+                    loop{
+                        let n = stderr.read(&mut buffer).unwrap();
+                        if n == 0{
                             break;
                         }
                         eprintln!("Record Process: {}", String::from_utf8_lossy(&buffer[..n]));
                     }
-                    println!("Ending thread6");
 
                 });
-                let stdin_mutex = Arc::new(Mutex::new(ffmpeg_command_record.take_stdin().unwrap()));
-                let stdin_mutex_clone = stdin_mutex.clone();
                 self.pid_record = Some(ffmpeg_command_record.as_inner().id() as i32);
                 let rx_record_clone = self.rx_record.as_ref().unwrap().clone();
                 thread::spawn( || {
@@ -332,81 +380,137 @@ impl StreamingClient {
     }
 
     pub fn update(&mut self, message: VideoPlayerMessage) -> Option<VideoPlayerMessage> {
-        return match message {
-            VideoPlayerMessage::Connect => {
-                match self.start_connection() {
-                    None => {
-                        self.manage_incoming_packets();
-                        self.state = StreamingClientStateEnum::Connected;
-                        None
-                    }
-                    Some(_) => {
-                        Some(VideoPlayerMessage::Exit)
+        let mut tmp_message = message.clone();
+        if self.rx_connection_status.is_some(){
+            if let Ok(inner_message) = self.rx_connection_status.as_mut().unwrap().try_recv(){
+               match message{
+                            VideoPlayerMessage::GifPlayerMessage(_) | VideoPlayerMessage::NextFrame=> {
+                               tmp_message = inner_message;
+                            },
+                            _ => {}
+                        }
                     }
                 }
-            }
-            VideoPlayerMessage::NextFrame => {
-                if let Some(image) = self.update_image() {
-                    match image.data() {
-                        iced::advanced::image::Data::Rgba { width, height, pixels } => {
-                            println!("{} {} {}", width, height, pixels.len());
-                        },
-                        iced::advanced::image::Data::Bytes(bytes) => {
-                            println!("{}", bytes.len());
-                        },
-                        _ => {}
-                    };
-                    self.current_frame = image;
+   
+            return match tmp_message {
+                VideoPlayerMessage::Connect => {
+                    self.state = StreamingClientStateEnum::NotConnected;
+                    let (tx, rx) = self.start_connection();
+                    self.tx_connection_status = Some(tx);
+                    self.rx_connection_status = Some(rx);
+                    None
                 }
-                None
-            }
-            VideoPlayerMessage::Exit => {
-                if let Some(_) = self.pid_record {
+                VideoPlayerMessage::NoConnection => {
+                    self.state = StreamingClientStateEnum::Retry;
+                    println!("HERE");
+                    None
+                }
+                VideoPlayerMessage::NoStreamAvailable =>{
+                    self.state = StreamingClientStateEnum::ConnectedNoStreaming;
+                    self.manage_incoming_packets();
+                    None
+                }
+                VideoPlayerMessage::StreamAvailable => {
+                    self.state = StreamingClientStateEnum::Streaming;
+                    None
+                }
+                VideoPlayerMessage::Exit => {
+                    if let Some(_) = self.pid_record {
+                        self.stop_record();
+                    }
+                    self.on_exit();
+                    None
+                }    
+                VideoPlayerMessage::NextFrame => {
+                    if let Some(image) = self.update_image() {
+                        self.current_frame = image;
+                    }
+                    None
+                }
+                VideoPlayerMessage::GifPlayerMessage(GifPlayerMessage) => {
+                    if let  Some(gif) = self.gif_widget.as_mut(){
+                        gif.update(GifPlayerMessage);
+                    } 
+                    None
+                }
+                
+                VideoPlayerMessage::StartRecord => {
+                    self.start_record();
+                    None
+                }
+                VideoPlayerMessage::StopRecord => {
                     self.stop_record();
+                    None
                 }
-                self.on_exit();
-                None
-            }
-            VideoPlayerMessage::StartRecord => {
-                self.start_record();
-                None
-            }
-            VideoPlayerMessage::StopRecord => {
-                self.stop_record();
-                None
             }
         }
-    }
     
     pub fn view_video(&self) -> Element<VideoPlayerMessage>{
-        Image::new(self.current_frame.clone())
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into()
+        match self.state{
+            StreamingClientStateEnum::Streaming => {
+                Image::new(self.current_frame.clone())
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
+            },
+            StreamingClientStateEnum::Retry => {
+                Button::new(Text::new("Riprova"))
+                    .padding(10)
+                    .width(Length::Fixed(200.0))
+                    .on_press(VideoPlayerMessage::Connect)
+                    .into()
+            }
+            _ => {
+                    self.gif_widget.as_ref().unwrap().view().map(VideoPlayerMessage::GifPlayerMessage)
+                }
         }
+            
+    }
 
-    pub fn view_record_button(&self) -> Element<VideoPlayerMessage>{
-        if let Some(_) = self.pid_record{
-            Button::new(Text::new("Stop Record"))
-            .padding(10)
-            .width(Length::Fixed(200.0))
-            .on_press(VideoPlayerMessage::StopRecord)
-            .into()
-        }else{
-            Button::new(Text::new("Start Record"))
-            .padding(10)
-            .width(Length::Fixed(200.0))
-            .on_press(VideoPlayerMessage::StartRecord)
-            .into()
+    pub fn view_record_button(&self) -> Option<Element<VideoPlayerMessage>> {
+        match self.state{
+            StreamingClientStateEnum::Streaming => {
+                if let Some(_) = self.pid_record{
+                    Some(Button::new(Text::new("Stop Record"))
+                    .padding(10)
+                    .width(Length::Fixed(200.0))
+                    .on_press(VideoPlayerMessage::StopRecord)
+                    .into())
+                }else{
+                    Some(Button::new(Text::new("Start Record"))
+                    .padding(10)
+                    .width(Length::Fixed(200.0))
+                    .on_press(VideoPlayerMessage::StartRecord)
+                    .into())
+                }
+            },
+            _ => {None}
         }
+       
     }
 
     pub fn subscription(&self) -> Subscription<VideoPlayerMessage>{
             match self.state{
-                StreamingClientStateEnum::Connected => {iced_time::every(Duration::from_secs_f32(1.0/60.0 )).map(|_| VideoPlayerMessage::NextFrame)},
-                _  => {Subscription::none()}
+                StreamingClientStateEnum::Streaming => {iced_time::every(Duration::from_secs_f32(1.0/40.0 )).map(|_| VideoPlayerMessage::NextFrame)},
+                _ => {
+                    if let Some(gif) = self.gif_widget.as_ref(){
+                        gif.subscription().map(VideoPlayerMessage::GifPlayerMessage)
+                    }else{ 
+                        Subscription::none()
+                    }
+                }
             }
             
     }
 }
+impl Drop for StreamingClient {
+    fn drop(&mut self) {
+        println!("Dropping Streaming Client");
+        if let Some(_) = self.pid_record {
+            self.stop_record();
+        }
+        self.on_exit();
+    }
+}
+
 

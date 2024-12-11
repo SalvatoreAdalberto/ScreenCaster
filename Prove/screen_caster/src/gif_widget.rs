@@ -1,14 +1,18 @@
 use iced::{
-    time as iced_time, widget::image, Command, Element, Subscription
+    time as iced_time, widget::image::Handle, widget::image::Image, Command, Element, Subscription
 };
-use gif::{Decoder};
-use std::fs::File;
-use std::time::Duration;
 
+
+use gif::{Decoder, Frame};
+use std::fs::File;
+use std::error::Error;
+use std::time::Duration;
+use image;
 
 pub struct GifPlayer {
-    frames: Vec<image::Handle>, // Store GIF frames as images
+    frames: Vec<Handle>, // Store GIF frames as images
     current_frame: usize,
+    delays: Vec<Duration>,
     frame_delay: Duration,
 }
 
@@ -21,12 +25,13 @@ impl GifPlayer {
     
     pub fn new() -> Self {
         // Load GIF frames
-        let (frames, frame_delay) = load_gif_frames("./loading49.gif");
-
+        let (frames, delays) = load_gif("./spinner1.gif").unwrap();
+        let frame_delay = delays[0];
         
             GifPlayer {
                 frames,
                 current_frame: 0,
+                delays,
                 frame_delay,
             }
     
@@ -36,15 +41,19 @@ impl GifPlayer {
         match message {
             GifPlayerMessage::NextFrame => {
                 self.current_frame = (self.current_frame + 1) % self.frames.len();
-            }
+
+                // Imposta il ritardo per il prossimo frame
+                self.frame_delay = self.delays[self.current_frame];
         }
+            }
+
         Command::none()
     }
 
     pub fn view(&self) -> Element<GifPlayerMessage> {
-        image::Image::new(self.frames[self.current_frame].clone())
-            .width(44)
-            .height(66)
+        Image::new(self.frames[self.current_frame].clone())
+            .width(150)
+            .height(150)
             .into()
     }
 
@@ -52,58 +61,60 @@ impl GifPlayer {
         
         iced_time::every(self.frame_delay).map(|_| GifPlayerMessage::NextFrame)
     }
+
 }
 
-fn load_gif_frames(path: &str) -> (Vec<image::Handle>, Duration) {
-    let mut frames = Vec::new();
-    let mut decoder = Decoder::new(File::open(path).unwrap()).unwrap();
-    let mut frame_delay = Duration::from_secs(1);
-    let palette = decoder.global_palette().unwrap().to_vec();
-    let canvas_width = decoder.width() as usize;
-    let canvas_height = decoder.height() as usize;
-    
 
-    println!("{:?}", palette);
-
-    while let Some(frame) = decoder.read_next_frame().unwrap() {
-        let frame_width = frame.width as usize;
-        let frame_height = frame.height as usize;
-
-        // Clear the canvas (optional, depending on GIF disposal method)
-        let mut canvas = vec![0; canvas_width * canvas_height * 4]; // Full canvas
-        for y in 0..frame_height {
-            for x in 0..frame_width {
-                let frame_index = y * frame_width + x;
-                let canvas_x = frame.left as usize + x;
-                let canvas_y = frame.top as usize + y;
-                let canvas_index = (canvas_y * canvas_width + canvas_x) * 4;
-
-                let palette_index = frame.buffer[frame_index] as usize * 3;
-                canvas[canvas_index] = palette[palette_index];       // R
-                canvas[canvas_index + 1] = palette[palette_index + 1]; // G
-                canvas[canvas_index + 2] = palette[palette_index + 2]; // B
-                canvas[canvas_index + 3] = 255; // Fully opaque
-            }
-        }
-        // let mut buffer = vec![0; canvas_width * canvas_height * 4 ];
-        // //println!("{:?}", frame.buffer);
+     // Carica una GIF e converte i frame in handle di immagini Iced
+    fn load_gif(path: &str) -> Result<(Vec<Handle>, Vec<Duration>), Box<dyn Error>> {
+        let file = std::fs::File::open(path)?;
+        let mut gif_opts = gif::DecodeOptions::new();
         
-        // let mut i = 0;
+        gif_opts.set_color_output(gif::ColorOutput::Indexed);
 
-        // for &index in frame.buffer.iter() {
-        //     let p_index = index as usize * 3;
-        //     buffer[i] = palette[p_index];
-        //     buffer[i+1] = palette[p_index + 1];
-        //     buffer[i+2] = palette[p_index + 2];
-        //     buffer[i+3] = 255;
-        //     i += 4;
-        // }
+        let mut decoder = gif_opts.read_info(file)?;
+        let mut screen = gif_dispose::Screen::new_decoder(&decoder);
 
-        // println!("{} {}", canvas_width, canvas_height);       
-        let handle = image::Handle::from_pixels(canvas_width as u32, canvas_height as u32, canvas);
-        frames.push(handle);
-        frame_delay = Duration::from_millis((frame.delay as u64) * 10); // Convert delay to milliseconds
+        let mut frames: Vec<Handle> = Vec::new();
+        let mut delays: Vec<Duration> = Vec::new();
+
+        while let Some(frame) = decoder.read_next_frame()? {
+            screen.blit_frame(&frame)?;
+            let (buf, width, height) = screen.pixels_rgba().to_contiguous_buf();
+            let img = gif_frame_to_rgba8(buf.into_owned(), width, height).unwrap();
+            frames.push(img);
+            // Aggiungi il delay del frame (in millisecondi)
+            let delay = Duration::from_millis(frame.delay as u64 * 10 );
+            delays.push(delay);
+        }
+
+        Ok((frames, delays))
     }
 
-    (frames, frame_delay)
-}
+// Funzione per convertire un frame `gif::Frame` in un `RgbaImage`
+pub fn gif_frame_to_rgba8(buf: Vec<rgb::RGBA8>, width: usize, height: usize) -> Result<Handle, Box<dyn Error>> {
+    // Crea una RgbaImage (un buffer immagine RGBA)
+    let mut img = image::RgbaImage::new(width as u32, height as u32);
+    let mut x = 0;
+    let mut y = 0;
+    let mut rgba_pixel;
+    // Copia i dati del frame nella RgbaImage
+    for rgba in buf.iter() {
+       
+        rgba_pixel = image::Rgba([rgba.r, rgba.g, rgba.b, rgba.a]);
+        
+        img.put_pixel(x as u32, y as u32, rgba_pixel);
+        x += 1;
+        if x == width {
+            y += 1;
+            if y == height{
+                break;
+            }
+            x = 0;
+        }
+        
+
+    }
+    let img_handle = Handle::from_pixels(width as u32, height as u32, img.to_vec());
+    Ok(img_handle)
+    }

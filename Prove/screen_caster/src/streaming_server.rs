@@ -139,20 +139,19 @@ impl StreamingServer {
 
                 let message = String::from_utf8_lossy(&buffer[..bytes_received]);
                 println!("Ricevuto: '{}' da {}", message, client_address);
+                let target_address = format!("{}:{}", client_address.ip(), client_address.port());
 
+
+                let mut list_guard = list_tx_clients_clone.lock().unwrap();
                 // Controlla se il messaggio è "START"
-                if message.trim() == "START" {
-                    let target_address = format!("{}:{}", client_address.ip(), client_address.port());
-                    // Spawna un thread per gestire l'invio dei dati
+                if message.trim() == "START" && !list_guard.contains_key(&target_address.clone()){
+
                     let send_socket = listener_socket.clone();
                     let (tx, rx) = channel::<Vec<u8>>();
 
-                    // Aggiungi il client alla lista
-                    let mut list_guard = list_tx_clients_clone.lock().unwrap();
                     list_guard.insert(target_address.clone(), Client{ tx, });
-
                     listener_socket.send_to(b"OK", &target_address).unwrap();
-                    drop(list_guard);
+                    
                     println!("Client connesso: {}", target_address);
                     //Spawna un thread per inviare i dati al client
                     thread::spawn(move || {
@@ -168,15 +167,13 @@ impl StreamingServer {
                         }
                     });
                 }
-
                 if message.trim().starts_with("STOP"){
                     let message = message.split("\n").collect::<Vec<&str>>();
                     let ip = message[1];
-                    let mut list_guard = list_tx_clients_clone.lock().unwrap();
                     list_guard.remove(ip);
-                    drop(list_guard);
                     listener_socket.send_to(b"OK", &client_address).unwrap();
                 }
+                drop(list_guard);
             }
             println!("Listener terminato.");
             cvar.notify_all(); // Notifica che il listener è terminato
