@@ -72,7 +72,6 @@ pub struct ScreenCaster {
     start_shortcut: String,        // Shortcut per avviare la registrazione
     stop_shortcut: String,         // Shortcut per fermare la registrazione
     clear_shortcut: String,
-    handle_annotation_tool: Option<Child>,
     client: Option<Output>,
     streamers_map: HashMap<String, String>,
     streamers_suggestions: Vec<(String, String)>,
@@ -121,7 +120,6 @@ impl Application for ScreenCaster {
                 start_shortcut: start,
                 stop_shortcut: stop,
                 clear_shortcut: clear,
-                handle_annotation_tool: None,
                 client: None,
                 streamers_map: utils::get_streamers_map(),
                 streamers_suggestions: Vec::new(),
@@ -308,20 +306,16 @@ impl Application for ScreenCaster {
             }
             Message::StartAnnotationMode => {
                 self.is_drawing = true;
-                if self.handle_annotation_tool.is_some() {
-                    self.handle_annotation_tool.as_mut().unwrap().kill().unwrap();
-                    self.handle_annotation_tool = None;
-                } else {
-                    let exe_path = utils::get_project_src_path();
-                    let mut real_path = "".to_string();
-                    real_path = exe_path.display().to_string() + r"/annotation_tool/target/release/annotation_tool";
-                    let child = Some(Command2::new(real_path)
-                        .arg(app_state.screen_index.to_string())
-                        .stdin(Stdio::piped())
-                        .spawn()
-                        .expect("Non è stato possibile avviare l'annotation tool"));
-                    app_state.update_stdin(child.unwrap().stdin.unwrap());
-                }
+                let exe_path = utils::get_project_src_path();
+                let mut real_path = "".to_string();
+                real_path = exe_path.display().to_string() + r"/annotation_tool/target/release/annotation_tool";
+                let child = Some(Command2::new(real_path)
+                    .arg(app_state.screen_index.to_string())
+                    .stdin(Stdio::piped())
+                    .spawn()
+                    .expect("Non è stato possibile avviare l'annotation tool"));
+                app_state.update_stdin(child.unwrap().stdin.unwrap());
+            
             }
             Message::StopAnnotationMode => {
                 self.is_drawing = false;

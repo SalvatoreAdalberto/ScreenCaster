@@ -6,7 +6,6 @@ use crate::hotkeys::AppState;
 
 mod workers;
 mod utils;
-mod screen_capture;
 mod gui;
 mod hotkeys;
 mod gif_widget;
