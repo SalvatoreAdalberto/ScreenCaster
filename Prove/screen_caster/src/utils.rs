@@ -284,7 +284,7 @@ pub fn get_ffmpeg_command(screen_index:usize, crop: Option<CropArea>) -> String 
 }
 
 
-pub fn read_hotkeys()  -> io::Result<(String, String, String)> {
+pub fn read_hotkeys()  -> io::Result<(String, String, String, String)> {
     let file = File::open(HOTKEYS_CONFIG_PATH)?;
     let start_reader = BufReader::new(&file);
 
@@ -324,10 +324,24 @@ pub fn read_hotkeys()  -> io::Result<(String, String, String)> {
         }
     };
 
-    Ok((start, stop, clear))
+    let file = File::open(HOTKEYS_CONFIG_PATH)?;
+    let close_reader = BufReader::new(&file);
+
+    // Read the second line of the file (shortcut)
+    let close = match close_reader.lines().nth(3) {
+        Some(Ok(shortcut)) => shortcut,
+        Some(Err(_err)) => {
+            "l".to_string()
+        }
+        None => {
+            "l".to_string()
+        }
+    };
+
+    Ok((start, stop, clear, close))
 }
 
-pub fn save_hotkeys(key1: &str, key2: &str, key3: &str) -> io::Result<()> {
+pub fn save_hotkeys(key1: &str, key2: &str, key3: &str, key4: &str) -> io::Result<()> {
     // Apri il file in modalità scrittura (truncando il contenuto)
     let mut file = File::create(HOTKEYS_CONFIG_PATH)?;
 
@@ -335,6 +349,7 @@ pub fn save_hotkeys(key1: &str, key2: &str, key3: &str) -> io::Result<()> {
     writeln!(file, "{}", key1)?;
     writeln!(file, "{}", key2)?;
     writeln!(file, "{}", key3)?;
+    writeln!(file, "{}", key4)?;
 
     Ok(())
 }

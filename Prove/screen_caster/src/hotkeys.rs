@@ -17,6 +17,8 @@ use iced::{ Subscription, time as iced_time, Command, Element, Length};
 pub enum HotkeyMessage {
     Start,
     Stop,
+    CloseSessionServer,
+    CloseSessionClient,
 }
 
 pub struct AppState {
@@ -26,6 +28,7 @@ pub struct AppState {
     pub(crate) screen_index: usize, // Indice dello schermo da condividere
     pub(crate) annotation_stdin: Option<std::process::ChildStdin>, // Stdin per l'invio delle annotazioni
     pub(crate) cast_started: bool,
+    pub(crate) session_closed: bool,
 }
 
 impl AppState {
@@ -37,11 +40,13 @@ impl AppState {
             screen_index: 1,
             annotation_stdin: None,
             cast_started: false,
+            session_closed: false,
         }
     }
 
     pub fn start(&mut self) {
         if self.is_sharing && !self.cast_started {
+            self.session_closed = false;
             if self.streaming_server.is_none(){
                 self.streaming_server = Some(streaming_server::StreamingServer::new());
             }
@@ -77,13 +82,7 @@ impl AppState {
     }
 
     pub fn update_stdin(&mut self, stdin: std::process::ChildStdin) {
-        if let Some(ref mut std) = self.annotation_stdin {
-            if writeln!(std, "quit").is_ok() {
-                println!("Annotation closed");
-            } else {
-                eprintln!("Lo stdin è chiuso.");
-            }
-        }
+        self.close_annotation();
         self.annotation_stdin = Some(stdin);
     }
 
@@ -101,14 +100,39 @@ impl AppState {
         }
     }
 
+    pub fn check_annotation_open(&mut self) -> bool {
+        if let Some(ref mut std) = self.annotation_stdin {
+            if writeln!(std, "check").is_ok() {
+                true
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    }
+
+    pub fn stop_session(&mut self) {
+        self.session_closed = true;
+        if self.cast_started{
+            self.stop();
+        }
+    }
+
     pub fn subscription(&mut self) -> Subscription<HotkeyMessage> {
         if self.cast_started && self.is_sharing {
             iced_time::every(Duration::from_secs_f32(0.1))
                 .map(|_| HotkeyMessage::Start)
+        } else if self.is_sharing && self.session_closed {
+            iced_time::every(Duration::from_secs_f32(0.1))
+                .map(|_| HotkeyMessage::CloseSessionServer)
         }
-        else if !self.cast_started && self.is_sharing {
+        else if !self.cast_started && self.is_sharing && !self.session_closed {
             iced_time::every(Duration::from_secs_f32(0.1))
                 .map(|_| HotkeyMessage::Stop)
+        }  else if !self.is_sharing && self.session_closed {
+            iced_time::every(Duration::from_secs_f32(0.1))
+                .map(|_| HotkeyMessage::CloseSessionClient)
         }
         else {
             Subscription::none()
@@ -117,7 +141,7 @@ impl AppState {
 }
 
 #[cfg(target_os = "macos")]
-pub fn macos_event_loop(id1: Arc<Mutex<u32>>, id2: Arc<Mutex<u32>>, id3: Arc<Mutex<u32>>, app_state: Arc<Mutex<AppState>>, running: Arc<Mutex<bool>>) {
+pub fn macos_event_loop(id1: Arc<Mutex<u32>>, id2: Arc<Mutex<u32>>, id3: Arc<Mutex<u32>>, id4: Arc<Mutex<u32>>, app_state: Arc<Mutex<AppState>>, running: Arc<Mutex<bool>>) {
     loop {
         if !*running.lock().unwrap() {
             break;
@@ -132,6 +156,8 @@ pub fn macos_event_loop(id1: Arc<Mutex<u32>>, id2: Arc<Mutex<u32>>, id3: Arc<Mut
                     state.stop(); // Ferma la registrazione
                 } else if event.id == *id3.lock().unwrap() {
                     state.clear();
+                } else if event.id == *id4.lock().unwrap() {
+                    state.stop_session();
                 }
             }
         }
@@ -139,7 +165,7 @@ pub fn macos_event_loop(id1: Arc<Mutex<u32>>, id2: Arc<Mutex<u32>>, id3: Arc<Mut
 }
 
 #[cfg(target_os = "linux")]
-pub fn linux_event_loop(id1: Arc<Mutex<u32>>, id2: Arc<Mutex<u32>>, id3: Arc<Mutex<u32>>, app_state: Arc<Mutex<AppState>>, running: Arc<Mutex<bool>>) {
+pub fn linux_event_loop(id1: Arc<Mutex<u32>>, id2: Arc<Mutex<u32>>, id3: Arc<Mutex<u32>>, id4: Arc<Mutex<u32>>, app_state: Arc<Mutex<AppState>>, running: Arc<Mutex<bool>>) {
     loop {
         if !*running.lock().unwrap() {
             break;
@@ -154,6 +180,8 @@ pub fn linux_event_loop(id1: Arc<Mutex<u32>>, id2: Arc<Mutex<u32>>, id3: Arc<Mut
                     state.stop(); // Ferma la registrazione
                 } else if event.id == *id3.lock().unwrap() {
                     state.clear();
+                } else if event.id == *id4.lock().unwrap() {
+                    state.stop_session();
                 }
             }
         }
@@ -161,7 +189,7 @@ pub fn linux_event_loop(id1: Arc<Mutex<u32>>, id2: Arc<Mutex<u32>>, id3: Arc<Mut
 }
 
 #[cfg(target_os = "windows")]
-pub fn windows_event_loop(id1: Arc<Mutex<u32>>, id2: Arc<Mutex<u32>>, id3: Arc<Mutex<u32>>, app_state: Arc<Mutex<AppState>>, running: Arc<Mutex<bool>>) {
+pub fn windows_event_loop(id1: Arc<Mutex<u32>>, id2: Arc<Mutex<u32>>, id3: Arc<Mutex<u32>>, id4: Arc<Mutex<u32>>, app_state: Arc<Mutex<AppState>>, running: Arc<Mutex<bool>>) {
     unsafe {
         let mut msg: MSG = std::mem::zeroed();
         loop {
@@ -178,6 +206,8 @@ pub fn windows_event_loop(id1: Arc<Mutex<u32>>, id2: Arc<Mutex<u32>>, id3: Arc<M
                         state.stop(); // Ferma la registrazione
                     } else if event.id == *id3.lock().unwrap() {
                         state.clear();
+                    } else if event.id == *id4.lock().unwrap() {
+                        state.stop_session();
                     }
                 }
             }
