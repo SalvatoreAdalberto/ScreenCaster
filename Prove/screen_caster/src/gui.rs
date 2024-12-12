@@ -407,8 +407,10 @@ impl Application for ScreenCaster {
     fn subscription(&self) -> Subscription<Message> {
         match self.state {
             AppStateEnum::Watching => {
+                let mut app_state = self.app_state.lock().unwrap();
                 if let Some(sc) = self.streaming_client.as_ref() {
-                    sc.subscription().map(Message::VideoPlayerMessage)
+                    Subscription::batch(vec![sc.subscription().map(Message::VideoPlayerMessage), app_state.subscription().map(Message::HotkeyMessage)])
+
                 }
                 else{
                     Subscription::none()
