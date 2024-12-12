@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 use std::thread;
 use global_hotkey::GlobalHotKeyManager;
-use global_hotkey::hotkey::{Code, HotKey, Modifiers};
+use global_hotkey::hotkey::{HotKey, Modifiers};
 use crate::hotkeys::AppState;
 
 mod workers;

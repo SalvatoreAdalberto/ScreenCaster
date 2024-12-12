@@ -10,8 +10,7 @@ use winapi::shared::winerror::WAIT_TIMEOUT;
 use winapi::um::winbase::WAIT_OBJECT_0;
 use crate::streaming_server;
 use crate::gui::ShareMode;
-use crate::streaming_client::VideoPlayerMessage;
-use iced::{ Subscription, time as iced_time, Command, Element, Length};
+use iced::{ Subscription, time as iced_time};
 
 #[derive(Debug, Clone)]
 pub enum HotkeyMessage {
