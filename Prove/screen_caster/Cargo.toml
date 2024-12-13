@@ -27,4 +27,5 @@ ipnet = "*"
 ipconfig = "*"
 pnet = "*"
 rgb = {version = "*", features = ["as-bytes"]}
-
+native-dialog = "*"
+dirs = "*"

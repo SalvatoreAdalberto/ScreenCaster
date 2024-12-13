@@ -11,10 +11,10 @@ use std::net::{Ipv4Addr, IpAddr};
 use if_addrs::{get_if_addrs, IfAddr};
 
 use std::io;
-use std::fs::File;
+use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use druid::Screen;
 use ffmpeg_sidecar::{
     command::ffmpeg_is_installed,
@@ -25,9 +25,11 @@ use ffmpeg_sidecar::{
 use ffmpeg_sidecar::command::FfmpegCommand;
 use iced::advanced::graphics::image::image_rs::write_buffer_with_format;
 use crate::streaming_server::CropArea;
+use dirs::download_dir;
 
 pub const STREAMERS_LIST_PATH : &str = "../config/streamers_list.txt";
 pub const HOTKEYS_CONFIG_PATH : &str = "../config/hotkeys.txt";
+pub const SAVE_DIRECTORY_CONFIG_PATH : &str = "../config/save_path.txt";
 
 pub fn is_ip_in_lan(ip_to_check: &str) -> bool {
     let target_ip: Ipv4Addr = ip_to_check.parse().expect("Indirizzo IP non valido");
@@ -350,6 +352,63 @@ pub fn save_hotkeys(key1: &str, key2: &str, key3: &str, key4: &str) -> io::Resul
     writeln!(file, "{}", key2)?;
     writeln!(file, "{}", key3)?;
     writeln!(file, "{}", key4)?;
+
+    Ok(())
+}
+
+pub fn get_save_directory() -> io::Result<String> {
+    let default_save_directory = download_dir()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Could not locate the Downloads directory"))?
+        .to_str()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Invalid path to Downloads directory"))?
+        .to_string();
+
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(SAVE_DIRECTORY_CONFIG_PATH)?;
+
+    let mut reader = BufReader::new(&file);
+    let mut first_line = String::new();
+
+    if reader.read_line(&mut first_line)? == 0 {
+        // File is empty, write the default save directory
+        let mut writer = OpenOptions::new().write(true).open(SAVE_DIRECTORY_CONFIG_PATH)?;
+        writer.write_all(default_save_directory.as_bytes())?;
+        writer.write_all(b"\n")?;
+        Ok(default_save_directory)
+    } else {
+        // Trim any whitespace or newline characters
+        let savepath = first_line.trim().to_string();
+
+        // Check if the path is valid (e.g., exists or can be used)
+        if Path::new(&savepath).is_absolute() {
+            println!("Save directory: {}", savepath);
+            Ok(savepath)
+        } else {
+            Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "The path in the configuration file is not absolute.",
+            ))
+        }
+    }
+}
+
+pub fn save_directory(new_directory: &str) -> io::Result<()> {
+    if !Path::new(new_directory).is_absolute() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "The provided directory path is not absolute.",
+        ));
+    }
+
+    let mut file = OpenOptions::new()
+        .write(true)
+        .truncate(true)
+        .open(SAVE_DIRECTORY_CONFIG_PATH)?;
+
+    file.write_all(new_directory.as_bytes())?;
+    file.write_all(b"\n")?;
 
     Ok(())
 }

@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use crate::streaming_client::{StreamingClient, VideoPlayerMessage};
 use iced::window::Event;
 use std::io::Write;
+use native_dialog::FileDialog;
 
 // Definiamo i messaggi dell'applicazione
 #[derive(Debug, Clone)]
@@ -26,6 +27,8 @@ pub enum Message {
     ClearHotkeyChanged(String),
     CloseHotkeyChanged(String),
     GoToChangeHotKeys,
+    GoToSettings,
+    GoToChangeDirectory,
     SaveHotKeys,
     ToggleAnnotationTool,
     SelectCropArea,
@@ -41,6 +44,9 @@ pub enum Message {
     ScreenSelected,
     ModeSelected(ShareMode),
     HotkeyMessage(HotkeyMessage),
+    BrowseDirectory,
+    DirectorySelected(Option<String>),
+    SaveDirectory,
 }
 
 // Stati possibili dell'applicazione
@@ -51,6 +57,8 @@ pub enum AppStateEnum {
     IsSharing,
     Connect,
     ChangeHotKeys,
+    ChangeDirectory,
+    Settings,
     Watching,
     SelectScreen
 }
@@ -80,6 +88,7 @@ pub struct ScreenCaster {
     streaming_client: Option<StreamingClient>,
     screen_index: usize,
     share_mode: ShareMode,
+    selected_directory: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -105,6 +114,7 @@ impl Application for ScreenCaster {
 
     fn new(flags: Self::Flags) -> (Self, Command<Self::Message>) {
         let (start, stop, clear, close) = utils::read_hotkeys().unwrap();
+        let save_path = utils::get_save_directory().unwrap();
         (
             ScreenCaster {
                 state: AppStateEnum::Home,
@@ -130,6 +140,7 @@ impl Application for ScreenCaster {
                 streaming_client: None,
                 screen_index: 1,
                 share_mode: ShareMode::Fullscreen,
+                selected_directory: save_path,
             },
             Command::none(),
         )
@@ -216,7 +227,7 @@ impl Application for ScreenCaster {
                 }
                 return if utils::is_ip_in_lan(&self.ip_address) {
                     self.state = AppStateEnum::Watching;
-                    self.streaming_client = Some(StreamingClient::new(self.ip_address.clone()));
+                    self.streaming_client = Some(StreamingClient::new(self.ip_address.clone(), self.selected_directory.clone()));
                     Command::perform(async {}, |_| Message::Connecting)
                 } else {
                     Command::perform(async {}, |_| Message::NotInLan)
@@ -308,6 +319,8 @@ impl Application for ScreenCaster {
                 println!("Stop: {}", self.stop_shortcut);
                 println!("Clear: {}", self.clear_shortcut);
                 println!("Close: {}", self.close_shortcut);
+
+                self.state = AppStateEnum::Settings;
             }
             Message::StartRecordHotkeyChanged(key) => {
                 self.start_shortcut = key
@@ -383,6 +396,31 @@ impl Application for ScreenCaster {
                     }
                 }
             }
+            Message::BrowseDirectory => {
+                // Apri il file dialog per selezionare una directory
+                let selected_directory = FileDialog::new()
+                    .show_open_single_dir()
+                    .ok()
+                    .flatten();
+                return Command::perform(async {}, |_| Message::DirectorySelected(selected_directory.map(|d| d.display().to_string())));
+            }
+            Message::DirectorySelected(directory) => {
+                if let Some(directory) = directory {
+                    self.selected_directory = directory;
+                }
+            }
+            Message::GoToSettings => {
+                self.state = AppStateEnum::Settings;
+            }
+            Message::GoToChangeDirectory => {
+                self.state = AppStateEnum::ChangeDirectory;
+            }
+            Message::SaveDirectory => {
+                let dir = self.selected_directory.clone();
+                utils::save_directory(&dir).unwrap();
+                println!("Directory salvata: {}", dir);
+                self.state = AppStateEnum::Settings;
+            }
         }
 
         Command::none()
@@ -396,7 +434,9 @@ impl Application for ScreenCaster {
             AppStateEnum::Connect => self.view_connect(),
             AppStateEnum::ChangeHotKeys => self.view_change_hotkey(),
             AppStateEnum::Watching => self.view_watching(),
-            AppStateEnum::SelectScreen => self.view_select_screen()
+            AppStateEnum::SelectScreen => self.view_select_screen(),
+            AppStateEnum::Settings => self.view_settings(),
+            AppStateEnum::ChangeDirectory => self.view_save_directory(),
         }
     }
 
@@ -452,9 +492,9 @@ impl ScreenCaster {
                     .spacing(20)
                     .align_items(Alignment::Center)
                     .push(
-                        Button::new(Text::new("Modifica hotkeys"))
+                        Button::new(Text::new("Impostazioni"))
                             .padding(10)
-                            .on_press(Message::GoToChangeHotKeys),
+                            .on_press(Message::GoToSettings),
                     )
             );
 
@@ -693,6 +733,45 @@ impl ScreenCaster {
 
     }
 
+    fn view_settings(&self) -> Element<Message> {
+        let content = Column::new()
+            .spacing(20)
+            .align_items(Alignment::Center)
+            .push(Text::new("Impostazioni").size(30))
+            .push(
+                Row::new()
+                    .spacing(20)
+                    .align_items(Alignment::Center)
+                    .push(
+                        Button::new(Text::new("Configura hotkeys"))
+                            .padding(10)
+                            .on_press(Message::GoToChangeHotKeys),
+                    )
+                    .push(
+                        Button::new(Text::new("Configura save directory"))
+                            .padding(10)
+                            .on_press(Message::GoToChangeDirectory),
+                    )
+            )
+            .push(
+                Row::new()
+                    .spacing(20)
+                    .align_items(Alignment::Center)
+                    .push(
+                        Button::new(Text::new("Torna alla Home"))
+                            .padding(10)
+                            .on_press(Message::GoBackHome),
+                    )
+            );
+
+        Container::new(content)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center_x()
+            .center_y()
+            .into()
+    }
+
     fn view_change_hotkey(&self) -> Element<Message> {
         let content = Column::new()
             .spacing(20)
@@ -776,12 +855,42 @@ impl ScreenCaster {
                             .width(Length::Fixed(200.0))
                             .on_press(Message::SaveHotKeys),
                     )
+            );
+
+        Container::new(content)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center_x()
+            .center_y()
+            .into()
+    }
+
+    fn view_save_directory(&self) -> Element<Message> {
+        let content = Column::new()
+            .spacing(20)
+            .align_items(Alignment::Center)
+            .push(Text::new("Configura la directory di salvataggio").size(30))
+            .push(
+                Row::new()
+                    .spacing(20)
+                    .align_items(Alignment::Center)
                     .push(
-                        Button::new(Text::new("Torna alla Home"))
+                        Text::new(self.selected_directory.clone())
+                    )
+                    .push(
+                        Button::new(Text::new("Sfoglia"))
+                            .on_press(Message::BrowseDirectory),
+                    )
+            )
+            .push(
+                Row::new()
+                    .spacing(20)
+                    .align_items(Alignment::Center)
+                    .push(
+                        Button::new(Text::new("Salva modifiche"))
                             .padding(10)
-                            .width(Length::Fixed(200.0))
-                            .on_press(Message::GoBackHome),
-                    ),
+                            .on_press(Message::SaveDirectory),
+                    )
             );
 
         Container::new(content)
