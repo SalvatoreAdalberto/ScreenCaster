@@ -1,5 +1,5 @@
 use iced::widget::{Button, Column, Container, Row, Text, TextInput, Scrollable, PickList, Space};
-use iced::{Alignment, Element, Length, Application, Command, Settings, Theme, Subscription};
+use iced::{Alignment, Element, Length, Application, Command, Settings, Theme, Subscription, window};
 use crate::utils;
 use std::sync::{Arc, Mutex};
 use global_hotkey::GlobalHotKeyManager;
@@ -47,6 +47,7 @@ pub enum Message {
     BrowseDirectory,
     DirectorySelected(Option<String>),
     SaveDirectory,
+    GoToListStreamers,
 }
 
 // Stati possibili dell'applicazione
@@ -60,7 +61,8 @@ pub enum AppStateEnum {
     ChangeDirectory,
     Settings,
     Watching,
-    SelectScreen
+    SelectScreen,
+    ChangeListStreamers,
 }
 
 // Struttura dell'applicazione
@@ -335,7 +337,8 @@ impl Application for ScreenCaster {
                 self.close_shortcut = key
             }
             Message::ToggleAnnotationTool => {
-                if !app_state.check_annotation_open() {
+                 if !app_state.check_annotation_open() {
+
                     let exe_path = utils::get_project_src_path();
                     let mut real_path = "".to_string();
                     real_path = exe_path.display().to_string() + r"/annotation_tool/target/release/annotation_tool";
@@ -421,6 +424,9 @@ impl Application for ScreenCaster {
                 println!("Directory salvata: {}", dir);
                 self.state = AppStateEnum::Settings;
             }
+            Message::GoToListStreamers => {
+                self.state = AppStateEnum::ChangeListStreamers;
+            }
         }
 
         Command::none()
@@ -437,6 +443,7 @@ impl Application for ScreenCaster {
             AppStateEnum::SelectScreen => self.view_select_screen(),
             AppStateEnum::Settings => self.view_settings(),
             AppStateEnum::ChangeDirectory => self.view_save_directory(),
+            AppStateEnum::ChangeListStreamers => self.view_modify_list_streamers(),
         }
     }
 
@@ -678,11 +685,22 @@ impl ScreenCaster {
                             .on_press(Message::TryConnect),
                     )
                     .push(
-                        Button::new(Text::new("Torna alla Home"))
+                        Button::new(Text::new("Gestisci lista streamers"))
+                            .padding(10)
+                            .width(Length::Fixed(200.0))
+                            .on_press(Message::GoToListStreamers),
+                    ),
+            )
+            .push(
+                Row::new()
+                    .spacing(20)
+                    .align_items(Alignment::Center)
+                    .push(
+                        Button::new(Text::new("Torna alla home"))
                             .padding(10)
                             .width(Length::Fixed(200.0))
                             .on_press(Message::GoBackHome),
-                    ),
+                    )
             );
 
         Container::new(content)
@@ -900,6 +918,49 @@ impl ScreenCaster {
             .center_y()
             .into()
     }
+
+    fn view_modify_list_streamers(&self) -> Element<Message> {
+        let header = Row::new()
+            .spacing(20)
+            .align_items(Alignment::Center)
+            .push(Text::new("Nome"))
+            .push(Text::new("IP"));
+
+        let rows = self.streamers_map.iter().fold(Column::new().spacing(10), |column, (name, ip)| {
+            column.push(
+                Row::new()
+                    .spacing(10)
+                    .align_items(Alignment::Center) // centrare il testo
+                    .push(Text::new(name.clone()).width(Length::FillPortion(1)))
+                    .push(Text::new(ip.clone()).width(Length::FillPortion(1))),
+            )
+        });
+
+        let content = Column::new()
+            .spacing(20)
+            .align_items(Alignment::Center)
+            .push(Text::new("Gestione lista streamers").size(30))
+            .push(header)
+            .push(rows)
+            .push(
+                Row::new()
+                    .spacing(20)
+                    .align_items(Alignment::Center)
+                    .push(
+                        Button::new(Text::new("Torna alla Home"))
+                            .padding(10)
+                            .on_press(Message::GoBackHome),
+                    )
+            );
+
+        Container::new(content)
+            .width(Length::Fixed(500.0))
+            .height(Length::Fixed(500.0))
+            .center_x()
+            .center_y()
+            .into()
+    }
+
 }
 
 pub fn run_gui(app_state: Arc<Mutex<AppState>>, manager: Arc<Mutex<GlobalHotKeyManager>>, id1: Arc<Mutex<u32>>, id2: Arc<Mutex<u32>>, id3: Arc<Mutex<u32>>, id4: Arc<Mutex<u32>>, hotkey_record: HotKey, hotkey_stop: HotKey, hotkey_clear: HotKey, hotkey_close: HotKey) {

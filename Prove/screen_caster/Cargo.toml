@@ -10,8 +10,6 @@ iced = { version = "0.10.0", features = ["wgpu", "image", "async-std", "advanced
 winit = "0.30.5"
 global-hotkey = "0.6.2"
 druid = { version = "0.8.3", features = ["svg", "image"] }
-eframe = { version = "0.28.1", features = ["default", "wgpu", "__screenshot"] }
-egui = "*"
 ipnetwork = "*"
 if-addrs = "0.6.4"
 gif = "0.13.1"
