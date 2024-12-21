@@ -1,16 +1,16 @@
 use iced::widget::{Button, Column, Container, Row, Text, TextInput, Scrollable, PickList, Space};
-use iced::{Alignment, Element, Length, Application, Command, Settings, Theme, Subscription};
+use iced::{Alignment, Element, Length, Application, Command, Settings, Theme, Subscription, window};
 use crate::utils;
 use std::sync::{Arc, Mutex};
 use global_hotkey::GlobalHotKeyManager;
 use global_hotkey::hotkey::{HotKey, Modifiers};
 use crate::hotkeys::{AppState, parse_key_code, HotkeyMessage};
-use std::process::{Child, Command as Command2, Output, Stdio};
+use std::process::{Command as Command2, Output, Stdio};
 use std::collections::HashMap;
 use crate::streaming_client::{StreamingClient, VideoPlayerMessage};
 use iced::window::Event;
 use std::io::Write;
-use iced::subscription;
+use native_dialog::FileDialog;
 
 // Definiamo i messaggi dell'applicazione
 #[derive(Debug, Clone)]
@@ -25,10 +25,12 @@ pub enum Message {
     StartRecordHotkeyChanged(String),
     StopRecordHotkeyChanged(String),
     ClearHotkeyChanged(String),
+    CloseHotkeyChanged(String),
     GoToChangeHotKeys,
+    GoToSettings,
+    GoToChangeDirectory,
     SaveHotKeys,
-    StartAnnotationMode,
-    StopAnnotationMode,
+    ToggleAnnotationTool,
     SelectCropArea,
     TryConnect,
     Connecting,
@@ -42,6 +44,10 @@ pub enum Message {
     ScreenSelected,
     ModeSelected(ShareMode),
     HotkeyMessage(HotkeyMessage),
+    BrowseDirectory,
+    DirectorySelected(Option<String>),
+    SaveDirectory,
+    GoToListStreamers,
 }
 
 // Stati possibili dell'applicazione
@@ -52,8 +58,11 @@ pub enum AppStateEnum {
     IsSharing,
     Connect,
     ChangeHotKeys,
+    ChangeDirectory,
+    Settings,
     Watching,
-    SelectScreen
+    SelectScreen,
+    ChangeListStreamers,
 }
 
 // Struttura dell'applicazione
@@ -66,19 +75,22 @@ pub struct ScreenCaster {
     start_hotkey: HotKey,
     stop_hotkey: HotKey,
     clear_hotkey: HotKey,
+    close_hotkey: HotKey,
     start_id: Arc<Mutex<u32>>,
     stop_id: Arc<Mutex<u32>>,
     clear_id: Arc<Mutex<u32>>,
+    close_id: Arc<Mutex<u32>>,
     start_shortcut: String,        // Shortcut per avviare la registrazione
     stop_shortcut: String,         // Shortcut per fermare la registrazione
     clear_shortcut: String,
+    close_shortcut: String,
     client: Option<Output>,
     streamers_map: HashMap<String, String>,
     streamers_suggestions: Vec<(String, String)>,
     streaming_client: Option<StreamingClient>,
     screen_index: usize,
     share_mode: ShareMode,
-    is_drawing: bool,
+    selected_directory: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -100,10 +112,11 @@ impl Application for ScreenCaster {
     type Executor = iced::executor::Default;
     type Message = Message;
     type Theme = Theme;
-    type Flags = (Arc<Mutex<AppState>>, Arc<Mutex<GlobalHotKeyManager>>, Arc<Mutex<u32>>, Arc<Mutex<u32>>, Arc<Mutex<u32>>, HotKey, HotKey, HotKey);
+    type Flags = (Arc<Mutex<AppState>>, Arc<Mutex<GlobalHotKeyManager>>, Arc<Mutex<u32>>, Arc<Mutex<u32>>, Arc<Mutex<u32>>, Arc<Mutex<u32>>, HotKey, HotKey, HotKey, HotKey);
 
     fn new(flags: Self::Flags) -> (Self, Command<Self::Message>) {
-        let (start, stop, clear) = utils::read_hotkeys().unwrap();
+        let (start, stop, clear, close) = utils::read_hotkeys().unwrap();
+        let save_path = utils::get_save_directory().unwrap();
         (
             ScreenCaster {
                 state: AppStateEnum::Home,
@@ -111,22 +124,25 @@ impl Application for ScreenCaster {
                 input_state: String::new(),
                 app_state: flags.0,
                 manager: flags.1,
-                start_hotkey: flags.5,
-                stop_hotkey: flags.6,
-                clear_hotkey: flags.7,
+                start_hotkey: flags.6,
+                stop_hotkey: flags.7,
+                clear_hotkey: flags.8,
+                close_hotkey: flags.9,
                 start_id: flags.2,
                 stop_id: flags.3,
                 clear_id: flags.4,
+                close_id: flags.5,
                 start_shortcut: start,
                 stop_shortcut: stop,
                 clear_shortcut: clear,
+                close_shortcut: close,
                 client: None,
                 streamers_map: utils::get_streamers_map(),
                 streamers_suggestions: Vec::new(),
                 streaming_client: None,
                 screen_index: 1,
                 share_mode: ShareMode::Fullscreen,
-                is_drawing: false,
+                selected_directory: save_path,
             },
             Command::none(),
         )
@@ -141,7 +157,6 @@ impl Application for ScreenCaster {
         match message {
             Message::GoToShareScreen => {
                 self.state = AppStateEnum::SelectScreen;
-                app_state.is_sharing = true; // Imposta lo stato di condivisione
             }
             Message::GoToViewScreen => {
                 self.state = AppStateEnum::Connect;
@@ -157,6 +172,7 @@ impl Application for ScreenCaster {
                         .output()
                         .expect("Non è stato possibile avviare l'overlay crop");
                 }
+                app_state.is_sharing = true; // Imposta lo stato di condivisione
                 self.state = AppStateEnum::StartSharing;
             }
             Message::StartCasting => {
@@ -213,7 +229,7 @@ impl Application for ScreenCaster {
                 }
                 return if utils::is_ip_in_lan(&self.ip_address) {
                     self.state = AppStateEnum::Watching;
-                    self.streaming_client = Some(StreamingClient::new(self.ip_address.clone()));
+                    self.streaming_client = Some(StreamingClient::new(self.ip_address.clone(), self.selected_directory.clone()));
                     Command::perform(async {}, |_| Message::Connecting)
                 } else {
                     Command::perform(async {}, |_| Message::NotInLan)
@@ -252,11 +268,12 @@ impl Application for ScreenCaster {
             Message::SaveHotKeys => {
                 let manager = self.manager.lock().unwrap();
 
-                manager.unregister_all(&[self.start_hotkey, self.stop_hotkey, self.clear_hotkey]).unwrap();
+                manager.unregister_all(&[self.start_hotkey, self.stop_hotkey, self.clear_hotkey, self.close_hotkey]).unwrap();
 
                 let start_code = parse_key_code(&self.start_shortcut).unwrap();
                 let stop_code = parse_key_code(&self.stop_shortcut).unwrap();
                 let clear_code = parse_key_code(&self.clear_shortcut).unwrap();
+                let close_code = parse_key_code(&self.close_shortcut).unwrap();
 
                 #[cfg(target_os = "macos")]
                 let hotkey_record = HotKey::new(Some(Modifiers::SUPER), start_code);
@@ -273,13 +290,20 @@ impl Application for ScreenCaster {
                 #[cfg(not(target_os = "macos"))]
                 let hotkey_clear = HotKey::new(Some(Modifiers::CONTROL), clear_code);
 
+                #[cfg(target_os = "macos")]
+                let hotkey_close = HotKey::new(Some(Modifiers::SUPER), close_code);
+                #[cfg(not(target_os = "macos"))]
+                let hotkey_close = HotKey::new(Some(Modifiers::CONTROL), close_code);
+
                 let _ = manager.register(hotkey_record).unwrap();
                 let _ = manager.register(hotkey_stop).unwrap();
                 let _ = manager.register(hotkey_clear).unwrap();
+                let _ = manager.register(hotkey_close).unwrap();
 
                 self.start_hotkey = hotkey_record;
                 self.stop_hotkey = hotkey_stop;
                 self.clear_hotkey = hotkey_clear;
+                self.close_hotkey = hotkey_close;
 
                 let mut id1 = self.start_id.lock().unwrap();
                 *id1 = hotkey_record.id();
@@ -287,13 +311,18 @@ impl Application for ScreenCaster {
                 *id2 = hotkey_stop.id();
                 let mut id3 = self.clear_id.lock().unwrap();
                 *id3 = hotkey_clear.id();
+                let mut id4 = self.close_id.lock().unwrap();
+                *id4 = hotkey_close.id();
 
-                utils::save_hotkeys(&self.start_shortcut, &self.stop_shortcut, &self.clear_shortcut).unwrap();
+                utils::save_hotkeys(&self.start_shortcut, &self.stop_shortcut, &self.clear_shortcut, &self.close_shortcut).unwrap();
 
                 println!("Hotkeys modificate!");
                 println!("Start: {}", self.start_shortcut);
                 println!("Stop: {}", self.stop_shortcut);
                 println!("Clear: {}", self.clear_shortcut);
+                println!("Close: {}", self.close_shortcut);
+
+                self.state = AppStateEnum::Settings;
             }
             Message::StartRecordHotkeyChanged(key) => {
                 self.start_shortcut = key
@@ -304,22 +333,24 @@ impl Application for ScreenCaster {
             Message::ClearHotkeyChanged(key) => {
                 self.clear_shortcut = key
             }
-            Message::StartAnnotationMode => {
-                self.is_drawing = true;
-                let exe_path = utils::get_project_src_path();
-                let mut real_path = "".to_string();
-                real_path = exe_path.display().to_string() + r"/annotation_tool/target/release/annotation_tool";
-                let child = Some(Command2::new(real_path)
-                    .arg(app_state.screen_index.to_string())
-                    .stdin(Stdio::piped())
-                    .spawn()
-                    .expect("Non è stato possibile avviare l'annotation tool"));
-                app_state.update_stdin(child.unwrap().stdin.unwrap());
-            
+            Message::CloseHotkeyChanged(key) => {
+                self.close_shortcut = key
             }
-            Message::StopAnnotationMode => {
-                self.is_drawing = false;
-                app_state.close_annotation();
+            Message::ToggleAnnotationTool => {
+                 if !app_state.check_annotation_open() {
+
+                    let exe_path = utils::get_project_src_path();
+                    let mut real_path = "".to_string();
+                    real_path = exe_path.display().to_string() + r"/annotation_tool/target/release/annotation_tool";
+                    let child = Some(Command2::new(real_path)
+                        .arg(app_state.screen_index.to_string())
+                        .stdin(Stdio::piped())
+                        .spawn()
+                        .expect("Non è stato possibile avviare l'annotation tool"));
+                    app_state.update_stdin(child.unwrap().stdin.unwrap());
+                } else {
+                    println!("Annotation tool già aperto");
+                }
             }
             Message::SelectCropArea => {
                 let exe_path = utils::get_project_src_path();
@@ -353,7 +384,48 @@ impl Application for ScreenCaster {
                     HotkeyMessage::Stop => {
                         self.state = AppStateEnum::StartSharing;
                     }
+                    HotkeyMessage::CloseSessionServer => {
+                        app_state.is_sharing = false;
+                        app_state.session_closed = false;
+                        self.state = AppStateEnum::Home;
+                    }
+                    HotkeyMessage::CloseSessionClient => {
+                        app_state.session_closed = false;
+                        if let Some(sc) = &mut self.streaming_client {
+                            sc.update(VideoPlayerMessage::Exit);
+                            self.streaming_client = None;
+                        }
+                        self.state = AppStateEnum::Home;
+                    }
                 }
+            }
+            Message::BrowseDirectory => {
+                // Apri il file dialog per selezionare una directory
+                let selected_directory = FileDialog::new()
+                    .show_open_single_dir()
+                    .ok()
+                    .flatten();
+                return Command::perform(async {}, |_| Message::DirectorySelected(selected_directory.map(|d| d.display().to_string())));
+            }
+            Message::DirectorySelected(directory) => {
+                if let Some(directory) = directory {
+                    self.selected_directory = directory;
+                }
+            }
+            Message::GoToSettings => {
+                self.state = AppStateEnum::Settings;
+            }
+            Message::GoToChangeDirectory => {
+                self.state = AppStateEnum::ChangeDirectory;
+            }
+            Message::SaveDirectory => {
+                let dir = self.selected_directory.clone();
+                utils::save_directory(&dir).unwrap();
+                println!("Directory salvata: {}", dir);
+                self.state = AppStateEnum::Settings;
+            }
+            Message::GoToListStreamers => {
+                self.state = AppStateEnum::ChangeListStreamers;
             }
         }
 
@@ -368,7 +440,10 @@ impl Application for ScreenCaster {
             AppStateEnum::Connect => self.view_connect(),
             AppStateEnum::ChangeHotKeys => self.view_change_hotkey(),
             AppStateEnum::Watching => self.view_watching(),
-            AppStateEnum::SelectScreen => self.view_select_screen()
+            AppStateEnum::SelectScreen => self.view_select_screen(),
+            AppStateEnum::Settings => self.view_settings(),
+            AppStateEnum::ChangeDirectory => self.view_save_directory(),
+            AppStateEnum::ChangeListStreamers => self.view_modify_list_streamers(),
         }
     }
 
@@ -379,13 +454,15 @@ impl Application for ScreenCaster {
     fn subscription(&self) -> Subscription<Message> {
         match self.state {
             AppStateEnum::Watching => {
+                let mut app_state = self.app_state.lock().unwrap();
                 if let Some(sc) = self.streaming_client.as_ref() {
-                    sc.subscription().map(Message::VideoPlayerMessage)
+                    Subscription::batch(vec![sc.subscription().map(Message::VideoPlayerMessage), app_state.subscription().map(Message::HotkeyMessage)])
+
                 }
                 else{
                     Subscription::none()
                 }},
-            AppStateEnum::IsSharing | AppStateEnum::StartSharing =>{
+            AppStateEnum::IsSharing | AppStateEnum::StartSharing => {
                 let mut app_state = self.app_state.lock().unwrap();
                 app_state.subscription().map(Message::HotkeyMessage)
             }
@@ -422,9 +499,9 @@ impl ScreenCaster {
                     .spacing(20)
                     .align_items(Alignment::Center)
                     .push(
-                        Button::new(Text::new("Modifica hotkeys"))
+                        Button::new(Text::new("Impostazioni"))
                             .padding(10)
-                            .on_press(Message::GoToChangeHotKeys),
+                            .on_press(Message::GoToSettings),
                     )
             );
 
@@ -549,15 +626,9 @@ impl ScreenCaster {
                             .on_press(Message::StopCasting),
                     )
                     .push(
-                        if self.is_drawing {
-                            Button::new(Text::new("Stop annotation tool"))
-                                .padding(10)
-                                .on_press(Message::StopAnnotationMode)
-                        } else {
-                            Button::new(Text::new("Start annotation tool"))
-                                .padding(10)
-                                .on_press(Message::StartAnnotationMode)
-                        },
+                        Button::new(Text::new("Annotation tool"))
+                            .padding(10)
+                            .on_press(Message::ToggleAnnotationTool)
                     ),
             );
 
@@ -614,11 +685,22 @@ impl ScreenCaster {
                             .on_press(Message::TryConnect),
                     )
                     .push(
-                        Button::new(Text::new("Torna alla Home"))
+                        Button::new(Text::new("Gestisci lista streamers"))
+                            .padding(10)
+                            .width(Length::Fixed(200.0))
+                            .on_press(Message::GoToListStreamers),
+                    ),
+            )
+            .push(
+                Row::new()
+                    .spacing(20)
+                    .align_items(Alignment::Center)
+                    .push(
+                        Button::new(Text::new("Torna alla home"))
                             .padding(10)
                             .width(Length::Fixed(200.0))
                             .on_press(Message::GoBackHome),
-                    ),
+                    )
             );
 
         Container::new(content)
@@ -667,6 +749,45 @@ impl ScreenCaster {
             .center_y()
             .into()
 
+    }
+
+    fn view_settings(&self) -> Element<Message> {
+        let content = Column::new()
+            .spacing(20)
+            .align_items(Alignment::Center)
+            .push(Text::new("Impostazioni").size(30))
+            .push(
+                Row::new()
+                    .spacing(20)
+                    .align_items(Alignment::Center)
+                    .push(
+                        Button::new(Text::new("Configura hotkeys"))
+                            .padding(10)
+                            .on_press(Message::GoToChangeHotKeys),
+                    )
+                    .push(
+                        Button::new(Text::new("Configura save directory"))
+                            .padding(10)
+                            .on_press(Message::GoToChangeDirectory),
+                    )
+            )
+            .push(
+                Row::new()
+                    .spacing(20)
+                    .align_items(Alignment::Center)
+                    .push(
+                        Button::new(Text::new("Torna alla Home"))
+                            .padding(10)
+                            .on_press(Message::GoBackHome),
+                    )
+            );
+
+        Container::new(content)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center_x()
+            .center_y()
+            .into()
     }
 
     fn view_change_hotkey(&self) -> Element<Message> {
@@ -730,17 +851,28 @@ impl ScreenCaster {
                     .spacing(20)
                     .align_items(Alignment::Center)
                     .push(
+                        Text::new("Inserisci la key per terminare la sessione:").size(20)
+                    )
+                    .push(
+                        TextInput::new(
+                            "Inserisci l'hotkey per terminare la sessione",
+                            &self.close_shortcut.to_uppercase(),
+                        )
+                            .padding(10)
+                            .width(Length::Fixed(50.0))
+                            .on_input(Message::CloseHotkeyChanged),
+                    )
+            )
+            .push(
+                Row::new()
+                    .spacing(20)
+                    .align_items(Alignment::Center)
+                    .push(
                         Button::new(Text::new("Salva hotkeys"))
                             .padding(10)
                             .width(Length::Fixed(200.0))
                             .on_press(Message::SaveHotKeys),
                     )
-                    .push(
-                        Button::new(Text::new("Torna alla Home"))
-                            .padding(10)
-                            .width(Length::Fixed(200.0))
-                            .on_press(Message::GoBackHome),
-                    ),
             );
 
         Container::new(content)
@@ -750,10 +882,89 @@ impl ScreenCaster {
             .center_y()
             .into()
     }
+
+    fn view_save_directory(&self) -> Element<Message> {
+        let content = Column::new()
+            .spacing(20)
+            .align_items(Alignment::Center)
+            .push(Text::new("Configura la directory di salvataggio").size(30))
+            .push(
+                Row::new()
+                    .spacing(20)
+                    .align_items(Alignment::Center)
+                    .push(
+                        Text::new(self.selected_directory.clone())
+                    )
+                    .push(
+                        Button::new(Text::new("Sfoglia"))
+                            .on_press(Message::BrowseDirectory),
+                    )
+            )
+            .push(
+                Row::new()
+                    .spacing(20)
+                    .align_items(Alignment::Center)
+                    .push(
+                        Button::new(Text::new("Salva modifiche"))
+                            .padding(10)
+                            .on_press(Message::SaveDirectory),
+                    )
+            );
+
+        Container::new(content)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center_x()
+            .center_y()
+            .into()
+    }
+
+    fn view_modify_list_streamers(&self) -> Element<Message> {
+        let header = Row::new()
+            .spacing(20)
+            .align_items(Alignment::Center)
+            .push(Text::new("Nome"))
+            .push(Text::new("IP"));
+
+        let rows = self.streamers_map.iter().fold(Column::new().spacing(10), |column, (name, ip)| {
+            column.push(
+                Row::new()
+                    .spacing(10)
+                    .align_items(Alignment::Center) // centrare il testo
+                    .push(Text::new(name.clone()).width(Length::FillPortion(1)))
+                    .push(Text::new(ip.clone()).width(Length::FillPortion(1))),
+            )
+        });
+
+        let content = Column::new()
+            .spacing(20)
+            .align_items(Alignment::Center)
+            .push(Text::new("Gestione lista streamers").size(30))
+            .push(header)
+            .push(rows)
+            .push(
+                Row::new()
+                    .spacing(20)
+                    .align_items(Alignment::Center)
+                    .push(
+                        Button::new(Text::new("Torna alla Home"))
+                            .padding(10)
+                            .on_press(Message::GoBackHome),
+                    )
+            );
+
+        Container::new(content)
+            .width(Length::Fixed(500.0))
+            .height(Length::Fixed(500.0))
+            .center_x()
+            .center_y()
+            .into()
+    }
+
 }
 
-pub fn run_gui(app_state: Arc<Mutex<AppState>>, manager: Arc<Mutex<GlobalHotKeyManager>>, id1: Arc<Mutex<u32>>, id2: Arc<Mutex<u32>>, id3: Arc<Mutex<u32>>, hotkey_record: HotKey, hotkey_stop: HotKey, hotkey_clear: HotKey) {
+pub fn run_gui(app_state: Arc<Mutex<AppState>>, manager: Arc<Mutex<GlobalHotKeyManager>>, id1: Arc<Mutex<u32>>, id2: Arc<Mutex<u32>>, id3: Arc<Mutex<u32>>, id4: Arc<Mutex<u32>>, hotkey_record: HotKey, hotkey_stop: HotKey, hotkey_clear: HotKey, hotkey_close: HotKey) {
     let mut clone = app_state.clone();
-    ScreenCaster::run(Settings::with_flags((app_state, manager, id1, id2, id3, hotkey_record, hotkey_stop, hotkey_clear))).expect("Failed to start application");
+    ScreenCaster::run(Settings::with_flags((app_state, manager, id1, id2, id3, id4, hotkey_record, hotkey_stop, hotkey_clear, hotkey_close))).expect("Failed to start application");
     clone.lock().unwrap().stop();
 }

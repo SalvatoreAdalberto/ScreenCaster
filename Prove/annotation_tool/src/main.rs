@@ -283,7 +283,7 @@ pub fn main() -> anyhow::Result<()> {
         .show_titlebar(false)
         .window_size(Size::new(width, height))
         .set_position((x, y));
-        //.resizable(true);
+    //.resizable(true);
 
     let initial_data = AppData {
         handled_monitors: vec![0],
@@ -375,7 +375,7 @@ fn build_root_widget() -> impl Widget<AppData> {
                 .entry(MenuItem::new("Highlight").on_activate(|_, data: &mut AppData, _| {
                     data.selected_shape = ShapeType::Highlight;
                 })),
-                _ctx.to_window(Point::ZERO),
+            _ctx.to_window(Point::ZERO),
         )
     });
 
@@ -397,7 +397,7 @@ fn build_root_widget() -> impl Widget<AppData> {
                 .entry(MenuItem::new("Yellow").on_activate(|_, data: &mut AppData, _| {
                     data.selected_color = Color::YELLOW;
                 })),
-                _ctx.to_window(Point::ZERO),
+            _ctx.to_window(Point::ZERO),
         )
     });
 
