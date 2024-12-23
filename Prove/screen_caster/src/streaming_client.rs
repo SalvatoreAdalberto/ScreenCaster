@@ -81,7 +81,7 @@ impl StreamingClient {
         let current_frame = Handle::from_path(LOADING_IMG);
         let (tx_connection_status, rx_connection_status) = bounded(1);
 
-
+       
         Self {
             current_frame,
             receiver_image: None,
@@ -149,7 +149,7 @@ impl StreamingClient {
             }
         });
     }
-
+    
     fn manage_incoming_packets(&mut self){
         let mut buffer = [0; BUFFER_SIZE];
         //Define playback channels
