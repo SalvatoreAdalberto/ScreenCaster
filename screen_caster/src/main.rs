@@ -14,7 +14,6 @@ mod streaming_server;
 mod streamers_table;
 
 fn main() {
-    utils::check_ffmpeg().expect("Failed to check FFmpeg");
     // Flag per fermare il thread
     let running = Arc::new(Mutex::new(true));
     let running_clone = Arc::clone(&running);

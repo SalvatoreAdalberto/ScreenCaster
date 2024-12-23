@@ -1,5 +1,5 @@
 use iced::widget::{Button, Column, Container, Row, Text, TextInput, Scrollable, PickList, Space};
-use iced::{Alignment, Element, Length, Application, Command, Settings, Theme, Subscription, window, alignment::Horizontal};
+use iced::{Alignment, Element, Length, Application, Command, Settings, Theme, Subscription, alignment::Horizontal};
 use crate::utils;
 use std::sync::{Arc, Mutex};
 use global_hotkey::GlobalHotKeyManager;
@@ -10,7 +10,6 @@ use std::collections::HashMap;
 use crate::streaming_client::{StreamingClient, VideoPlayerMessage};
 use crate::streamers_table::{StreamersTable, StreamersTableMessage};
 use iced::window::Event;
-use std::io::Write;
 use native_dialog::FileDialog;
 
 // Definiamo i messaggi dell'applicazione

@@ -5,9 +5,9 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::env;
 use anyhow::Context;
-use druid::{AppLauncher, LocalizedString, Scale, WidgetExt, WindowDesc};
+use druid::{AppLauncher, LocalizedString, Scale, WindowDesc};
 use druid::piet::{Color, RenderContext};
-use druid::widget::{Widget};
+use druid::widget::Widget;
 use druid::{Data, Env, EventCtx, Point, Rect, Lens, Event, LifeCycle, LifeCycleCtx, UpdateCtx, LayoutCtx, BoxConstraints, Size};
 
 #[derive(Clone, Data, Lens)]

@@ -2,9 +2,6 @@ use iced::{
     time as iced_time, widget::image::Handle, widget::image::Image, Command, Element, Subscription
 };
 
-
-use gif::{Decoder, Frame};
-use std::fs::File;
 use std::error::Error;
 use std::time::Duration;
 use image;

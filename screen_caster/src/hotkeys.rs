@@ -1,5 +1,5 @@
 use std::io::Write;
-use global_hotkey::{GlobalHotKeyEvent, HotKeyState, hotkey::{Code}};
+use global_hotkey::{GlobalHotKeyEvent, HotKeyState, hotkey::Code};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 #[cfg(target_os = "windows")]

@@ -1,14 +1,10 @@
-//use std::net::Ipv4Addr;
-use ipnet::Ipv4Net;
 #[cfg(not(target_os = "windows"))]
 use pnet::datalink;
 #[cfg(target_os = "windows")]
 use ipconfig::{get_adapters, OperStatus};
 use ipnetwork::IpNetwork;
-//use if_addrs::get_if_addrs;
 
-use std::net::{Ipv4Addr, IpAddr};
-use if_addrs::{get_if_addrs, IfAddr};
+use std::net::Ipv4Addr;
 
 use std::io;
 use std::fs::{File, OpenOptions};
@@ -16,14 +12,6 @@ use std::io::{BufRead, BufReader, Write};
 use std::env;
 use std::path::{Path, PathBuf};
 use druid::Screen;
-use ffmpeg_sidecar::{
-    command::ffmpeg_is_installed,
-    download::{check_latest_version, download_ffmpeg_package, unpack_ffmpeg},
-    paths::sidecar_dir,
-    version::ffmpeg_version,
-};
-use ffmpeg_sidecar::command::FfmpegCommand;
-use iced::advanced::graphics::image::image_rs::write_buffer_with_format;
 use crate::streaming_server::CropArea;
 use dirs::download_dir;
 
@@ -180,51 +168,6 @@ pub fn get_project_src_path() -> PathBuf {
     }
 
     exe_dir.to_path_buf()
-}
-
-pub fn check_ffmpeg() -> Result<(), Box<dyn std::error::Error>> {
-    println!("Checking FFmpeg...");
-    if ffmpeg_is_installed() {
-        println!("FFmpeg is already installed!");
-    } else {
-        match check_latest_version() {
-            Ok(version) => println!("Latest available version: {}", version),
-            Err(_) => println!("Skipping version check on this platform."),
-        }
-
-        let download_url = ffmpeg_download_url_custom()?;
-        let destination = sidecar_dir()?;
-
-        println!("Downloading from: {:?}", download_url);
-        let archive_path = download_ffmpeg_package(download_url, &destination)?;
-        println!("Downloaded package: {:?}", archive_path);
-
-        println!("Extracting...");
-        unpack_ffmpeg(&archive_path, &destination)?;
-
-        let version = ffmpeg_version()?;
-        println!("FFmpeg version: {}", version);
-    }
-
-    println!("Done!");
-    Ok(())
-}
-
-fn ffmpeg_download_url_custom() -> Result<&'static str, &'static str> {
-    if cfg!(all(target_os = "windows", target_arch = "x86_64")) {
-        Ok("https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip")
-    } else if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
-        Ok("https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz")
-    } else if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
-        Ok("https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-arm64-static.tar.xz")
-    }
-    else if cfg!(all(target_os = "macos", target_arch = "x86_64")) {
-        Ok("https://evermeet.cx/ffmpeg/getrelease")
-    } else if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
-        Ok("https://www.osxexperts.net/ffmpeg7arm.zip")
-    } else {
-        Err("Unsupported platform")
-    }
 }
 
 pub fn compute_window_size(index: usize) -> anyhow::Result<(f64, f64, f64, f64)> {
