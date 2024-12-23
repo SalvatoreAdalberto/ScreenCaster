@@ -2,6 +2,8 @@
 use pnet::datalink;
 #[cfg(target_os = "windows")]
 use ipconfig::{get_adapters, OperStatus};
+use if_addrs::{IfAddr, get_if_addrs};
+use ipnet::Ipv4Net;
 use ipnetwork::IpNetwork;
 
 use std::net::Ipv4Addr;
