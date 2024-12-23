@@ -11,6 +11,7 @@ mod hotkeys;
 mod gif_widget;
 mod streaming_client;
 mod streaming_server;
+mod streamers_table;
 
 fn main() {
     utils::check_ffmpeg().expect("Failed to check FFmpeg");

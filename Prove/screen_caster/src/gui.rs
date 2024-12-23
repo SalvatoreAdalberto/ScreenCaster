@@ -1,5 +1,5 @@
 use iced::widget::{Button, Column, Container, Row, Text, TextInput, Scrollable, PickList, Space};
-use iced::{Alignment, Element, Length, Application, Command, Settings, Theme, Subscription, window};
+use iced::{Alignment, Element, Length, Application, Command, Settings, Theme, Subscription, window, alignment::Horizontal};
 use crate::utils;
 use std::sync::{Arc, Mutex};
 use global_hotkey::GlobalHotKeyManager;
@@ -8,6 +8,7 @@ use crate::hotkeys::{AppState, parse_key_code, HotkeyMessage};
 use std::process::{Command as Command2, Output, Stdio};
 use std::collections::HashMap;
 use crate::streaming_client::{StreamingClient, VideoPlayerMessage};
+use crate::streamers_table::{StreamersTable, StreamersTableMessage};
 use iced::window::Event;
 use std::io::Write;
 use native_dialog::FileDialog;
@@ -48,6 +49,7 @@ pub enum Message {
     DirectorySelected(Option<String>),
     SaveDirectory,
     GoToListStreamers,
+    StreamersTableMessage(StreamersTableMessage)
 }
 
 // Stati possibili dell'applicazione
@@ -85,7 +87,8 @@ pub struct ScreenCaster {
     clear_shortcut: String,
     close_shortcut: String,
     client: Option<Output>,
-    streamers_map: HashMap<String, String>,
+    streamers_table: StreamersTable,
+    streamers_map: HashMap<String,String>,
     streamers_suggestions: Vec<(String, String)>,
     streaming_client: Option<StreamingClient>,
     screen_index: usize,
@@ -137,7 +140,8 @@ impl Application for ScreenCaster {
                 clear_shortcut: clear,
                 close_shortcut: close,
                 client: None,
-                streamers_map: utils::get_streamers_map(),
+                streamers_table: StreamersTable::new(),
+                streamers_map: HashMap::new(),
                 streamers_suggestions: Vec::new(),
                 streaming_client: None,
                 screen_index: 1,
@@ -160,6 +164,10 @@ impl Application for ScreenCaster {
             }
             Message::GoToViewScreen => {
                 self.state = AppStateEnum::Connect;
+                self.streamers_map = HashMap::new();
+                self.streamers_table.get_users().into_iter().for_each(|(_, (name, ip))|{
+                    self.streamers_map.insert(name, ip);
+                });
                 app_state.is_sharing = false; // Non siamo in condivisione
             }
             Message::ScreenSelected => {
@@ -426,6 +434,9 @@ impl Application for ScreenCaster {
             }
             Message::GoToListStreamers => {
                 self.state = AppStateEnum::ChangeListStreamers;
+            }
+            Message::StreamersTableMessage(message) => {
+                self.streamers_table.update(message);
             }
         }
 
@@ -920,44 +931,24 @@ impl ScreenCaster {
     }
 
     fn view_modify_list_streamers(&self) -> Element<Message> {
-        let header = Row::new()
-            .spacing(20)
-            .align_items(Alignment::Center)
-            .push(Text::new("Nome"))
-            .push(Text::new("IP"));
-
-        let rows = self.streamers_map.iter().fold(Column::new().spacing(10), |column, (name, ip)| {
-            column.push(
-                Row::new()
-                    .spacing(10)
-                    .align_items(Alignment::Center) // centrare il testo
-                    .push(Text::new(name.clone()).width(Length::FillPortion(1)))
-                    .push(Text::new(ip.clone()).width(Length::FillPortion(1))),
-            )
-        });
-
         let content = Column::new()
-            .spacing(20)
-            .align_items(Alignment::Center)
-            .push(Text::new("Gestione lista streamers").size(30))
-            .push(header)
-            .push(rows)
+            .push(Container::new(self.streamers_table.view_streamers_table().map(Message::StreamersTableMessage))
+                .height(Length::FillPortion(5)).center_y()
+            )    
             .push(
-                Row::new()
-                    .spacing(20)
-                    .align_items(Alignment::Center)
-                    .push(
-                        Button::new(Text::new("Torna alla Home"))
-                            .padding(10)
-                            .on_press(Message::GoBackHome),
-                    )
-            );
-
+                Container::new(
+                Button::new(Text::new("Back").horizontal_alignment(Horizontal::Center))
+                                .padding(10)
+                                .width(Length::Fixed(150.0))
+                                .on_press(Message::GoToViewScreen)
+                ).height(Length::FillPortion(2)).center_y()
+            ).width(Length::Fill).align_items(Alignment::Center);
+        
+        
         Container::new(content)
-            .width(Length::Fixed(500.0))
-            .height(Length::Fixed(500.0))
             .center_x()
             .center_y()
+            .height(Length::Fill)
             .into()
     }
 

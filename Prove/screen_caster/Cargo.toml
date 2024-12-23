@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 ffmpeg-sidecar = { version = "2.0.3", features = ["named_pipes"]}
 anyhow = "1.0.86"
-iced = { version = "0.10.0", features = ["wgpu", "image", "async-std", "advanced"] }
+iced = { version = "0.10.0", features = ["wgpu", "image", "async-std", "advanced", "svg"] }
 winit = "0.30.5"
 global-hotkey = "0.6.2"
 druid = { version = "0.8.3", features = ["svg", "image"] }
@@ -27,3 +27,6 @@ pnet = "*"
 rgb = {version = "*", features = ["as-bytes"]}
 native-dialog = "*"
 dirs = "*"
+rusqlite = "*"
+uuid = {version = "*", features = ["v4"]}
+thiserror = "*"

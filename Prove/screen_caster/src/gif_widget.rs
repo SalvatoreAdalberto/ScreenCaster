@@ -25,7 +25,7 @@ impl GifPlayer {
     
     pub fn new() -> Self {
         // Load GIF frames
-        let (frames, delays) = load_gif("./spinner1.gif").unwrap();
+        let (frames, delays) = load_gif("../assets/spinner1.gif").unwrap();
         let frame_delay = delays[0];
         
             GifPlayer {
