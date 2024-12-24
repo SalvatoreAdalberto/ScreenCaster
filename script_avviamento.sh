@@ -1,21 +1,18 @@
 cartelle="annotation_tool overlay_crop screen_caster setup"
 
 for d in $cartelle; do
-    echo "Entering folder $d"
     cd "$d" || exit 1
 
     # Check if target/release exists before building
-    if [ ! -d "./target/release" ]; then
-        echo "Running cargo build --release"
+    if [ ! -f "./target/release/$d" ]; then
+        echo "Building $d"
         cargo build --release
     else
-        echo "target/release already exists, skipping build"
+        echo "target/release/$d already exists"
     fi
 
     cd ..
 done
-
-echo "Operations completed."
 
 cd setup || exit 1
 ./target/release/setup
