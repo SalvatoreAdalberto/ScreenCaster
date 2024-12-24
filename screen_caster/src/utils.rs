@@ -331,10 +331,9 @@ pub fn get_save_directory() -> io::Result<String> {
             println!("Save directory: {}", savepath);
             Ok(savepath)
         } else {
-            Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "The path in the configuration file is not absolute.",
-            ))
+            println!("Invalid save directory, using default: {}", default_save_directory);
+            save_directory(&default_save_directory)?;
+            Ok(default_save_directory)
         }
     }
 }

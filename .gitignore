@@ -1,5 +1,5 @@
 .DS_Store
-./annotation_tool/target
-./overlay_crop/target
-./screen_caster/target
-./setup/target
+annotation_tool/target/
+overlay_crop/target/
+screen_caster/target/
+setup/target/
