@@ -9,7 +9,7 @@ use std::process::{Command as Command2, Output, Stdio};
 use std::collections::HashMap;
 use crate::streaming_client::{StreamingClient, VideoPlayerMessage};
 use crate::streamers_table::{StreamersTable, StreamersTableMessage};
-use iced::window::Event;
+use iced::Event;
 use native_dialog::FileDialog;
 
 // Definiamo i messaggi dell'applicazione
@@ -39,7 +39,7 @@ pub enum Message {
     NotInLan,
     VideoPlayerMessage(VideoPlayerMessage),
     StopConnection,
-    EventOccurred(Event),
+    WindowEvent(Event),
     PickList(usize),
     ScreenSelected,
     ModeSelected(ShareMode),
@@ -368,11 +368,14 @@ impl Application for ScreenCaster {
                     .output()
                     .expect("Non è stato possibile avviare l'overlay crop");
             }
-            Message::EventOccurred(event) => {
-                if let Event::CloseRequested = event{
+            Message::WindowEvent(event) => {
+                if let Event::Window(iced::window::Event::CloseRequested) = event{
+                    println!("Close requested");
                     if let Some(_) = self.streaming_client{
                         return Command::perform(async {}, |_| Message::StopConnection);
                     }
+                    self.app_state.lock().unwrap().stop();
+                    std::process::exit(0);
                 }
             }
             Message::PickList(n) => {
@@ -462,21 +465,22 @@ impl Application for ScreenCaster {
     }
 
     fn subscription(&self) -> Subscription<Message> {
+        let close_sub = iced::subscription::events().map(Message::WindowEvent);
         match self.state {
             AppStateEnum::Watching => {
                 let mut app_state = self.app_state.lock().unwrap();
                 if let Some(sc) = self.streaming_client.as_ref() {
-                    Subscription::batch(vec![sc.subscription().map(Message::VideoPlayerMessage), app_state.subscription().map(Message::HotkeyMessage)])
+                    Subscription::batch(vec![close_sub, sc.subscription().map(Message::VideoPlayerMessage), app_state.subscription().map(Message::HotkeyMessage)])
 
                 }
                 else{
-                    Subscription::none()
+                    close_sub
                 }},
             AppStateEnum::IsSharing | AppStateEnum::StartSharing => {
                 let mut app_state = self.app_state.lock().unwrap();
-                app_state.subscription().map(Message::HotkeyMessage)
+                Subscription::batch(vec![close_sub, app_state.subscription().map(Message::HotkeyMessage)])
             }
-            _ => {Subscription::none()}
+            _ => {close_sub}
         }
     }
 }
@@ -954,7 +958,8 @@ impl ScreenCaster {
 }
 
 pub fn run_gui(app_state: Arc<Mutex<AppState>>, manager: Arc<Mutex<GlobalHotKeyManager>>, id1: Arc<Mutex<u32>>, id2: Arc<Mutex<u32>>, id3: Arc<Mutex<u32>>, id4: Arc<Mutex<u32>>, hotkey_record: HotKey, hotkey_stop: HotKey, hotkey_clear: HotKey, hotkey_close: HotKey) {
-    let mut clone = app_state.clone();
-    ScreenCaster::run(Settings::with_flags((app_state, manager, id1, id2, id3, id4, hotkey_record, hotkey_stop, hotkey_clear, hotkey_close))).expect("Failed to start application");
-    clone.lock().unwrap().stop();
+    let mut settings = Settings::with_flags((app_state, manager, id1, id2, id3, id4, hotkey_record, hotkey_stop, hotkey_clear, hotkey_close));
+    settings.exit_on_close_request = false;
+    ScreenCaster::run(settings).expect("Failed to start application");
+    
 }
