@@ -1,12 +1,15 @@
 #![windows_subsystem = "windows"]
 
+mod buttons;
+
 use std::{env, thread};
 use anyhow::Context;
 use druid::{AppLauncher, Menu, Screen, WidgetExt, WindowDesc, MenuItem, ExtEventSink, Target, Selector};
 use druid::piet::{Color, RenderContext};
-use druid::widget::{Button, Flex, Widget, MainAxisAlignment};
+use druid::widget::{Button, Flex, MainAxisAlignment, Widget};
 use druid::{Data, Env, EventCtx, Point, Rect, Lens, Event, LifeCycle, LifeCycleCtx, UpdateCtx, LayoutCtx, BoxConstraints, Size, Application};
-use druid::kurbo::{Line};
+use druid::kurbo::Line;
+
 
 const STDIN_INPUT: Selector<String> = Selector::new("stdin.input");
 
@@ -334,33 +337,54 @@ fn start_stdin_reader(event_sink: ExtEventSink) {
 }
 
 fn build_root_widget() -> impl Widget<AppData> {
-    let quit_button = Button::new("❌").on_click(|_ctx, _data: &mut AppData, _env| {
-        Application::global().quit();
-    });
+    let quit_button = buttons::quit_button();/*Button::new("❌").on_click(|_ctx, _, _| {
+        _ctx.submit_command(druid::commands::QUIT_APP);
+    })
+    .env_scope(|env, _| {
+        env.set(druid::theme::BUTTON_LIGHT, Color::rgb8(51,89,218));
+        env.set(druid::theme::BUTTON_DARK, Color::rgb8(51,89,218));
+    });*/
 
-    let draw_button = Button::new("✎").on_click(|_ctx, _data: &mut AppData, _env| {
+    let draw_button = buttons::draw_button();/*Button::new("✎").on_click(|_ctx, _data: &mut AppData, _env| {
         _data.overlay_state = OverlayState::Drawing;
         _data.current_background_color = Color::rgba8(0xff, 0xff, 0xff, 0x4);
         _ctx.request_paint();
-    });
+    })
+    .env_scope(|env, _| {
+        env.set(druid::theme::BUTTON_LIGHT, Color::rgb8(51,89,218));
+        env.set(druid::theme::BUTTON_DARK, Color::rgb8(51,89,218));
+    });*/
 
-    let view_button = Button::new("👁️").on_click(|_ctx, _data: &mut AppData, _env| {
+    let view_button = buttons::view_button();/*Button::new("👁️").on_click(|_ctx, _data: &mut AppData, _env| {
         _data.overlay_state = OverlayState::View;
         _data.current_background_color = Color::rgba8(0xff, 0xff, 0xff, 0x00);
         _ctx.request_paint();
-    });
+    })
+    .env_scope(|env, _| {
+        env.set(druid::theme::BUTTON_LIGHT, Color::rgb8(51,89,218));
+        env.set(druid::theme::BUTTON_DARK, Color::rgb8(51,89,218));
+    });*/
 
-    let clear_button = Button::new("🗑️").on_click(|_ctx, _data: &mut AppData, _env| {
+    let clear_button = buttons::clear_button();/*Button::new("🗑️").on_click(|_ctx, _data: &mut AppData, _env| {
         _data.shapes.clear();
         _ctx.request_paint();
-    });
+    })
+    .env_scope(|env, _| {
+        env.set(druid::theme::BUTTON_LIGHT, Color::rgb8(51,89,218));
+        env.set(druid::theme::BUTTON_DARK, Color::rgb8(51,89,218));
+    });*/
 
-    let undo_button = Button::new("↺").on_click(|_ctx, _data: &mut AppData, _env| {
-        _data.shapes.pop();
-        _ctx.request_paint();
-    });
+    let undo_button = buttons::undo_button();/*Button::new("↺")
+        .on_click(|_ctx, data: &mut AppData, _env| {
+            data.shapes.pop();
+            _ctx.request_paint();
+        })
+        .env_scope(|env, _| {
+            env.set(druid::theme::BUTTON_LIGHT, Color::rgb8(51,89,218));
+            env.set(druid::theme::BUTTON_DARK, Color::rgb8(51,89,218));
+        });*/
 
-    let shape_selector = Button::new("Choose the shape").on_click(|_ctx, _, _| {
+    let shape_selector = buttons::choose_shape_button();/*Button::new("Choose the shape").on_click(|_ctx, _, _| {
         _ctx.show_context_menu(
             Menu::new("")
                 .entry(MenuItem::new("Rectangle").on_activate(|_, data: &mut AppData, _| {
@@ -377,9 +401,13 @@ fn build_root_widget() -> impl Widget<AppData> {
                 })),
             _ctx.to_window(Point::ZERO),
         )
-    });
+    })
+    .env_scope(|env, _| {
+        env.set(druid::theme::BUTTON_LIGHT, Color::rgb8(51,89,218));
+        env.set(druid::theme::BUTTON_DARK, Color::rgb8(51,89,218));
+    }).fix_height(30.0);*/
 
-    let color_selector = Button::new("Choose the color").on_click(|_ctx, _, _| {
+    let color_selector = buttons::choose_color_button();/*Button::new("Choose the color").on_click(|_ctx, _, _| {
         _ctx.show_context_menu(
             Menu::new("")
                 .entry(MenuItem::new("Black").on_activate(|_, data: &mut AppData, _| {
@@ -399,28 +427,32 @@ fn build_root_widget() -> impl Widget<AppData> {
                 })),
             _ctx.to_window(Point::ZERO),
         )
-    });
+    })
+    .env_scope(|env, _| {
+        env.set(druid::theme::BUTTON_LIGHT, Color::rgb8(51,89,218));
+        env.set(druid::theme::BUTTON_DARK, Color::rgb8(51,89,218));
+    });*/
 
     let controls = Flex::row()
         .with_flex_spacer(1.0) // Spazio flessibile a sinistra
         .with_child(quit_button)
-        .with_spacer(10.0) // Spazio fisso tra i pulsanti
+        .with_spacer(25.0) // Spazio fisso tra i pulsanti
         .with_child(draw_button)
-        .with_spacer(10.0)
+        .with_spacer(25.0)
         .with_child(view_button)
-        .with_spacer(10.0)
+        .with_spacer(25.0)
         .with_child(clear_button)
-        .with_spacer(10.0)
+        .with_spacer(25.0)
         .with_child(undo_button)
-        .with_spacer(10.0)
+        .with_spacer(25.0)
         .with_child(shape_selector)
-        .with_spacer(10.0)
+        .with_spacer(25.0)
         .with_child(color_selector)
         .with_flex_spacer(1.0) // Spazio flessibile a destra
         .main_axis_alignment(MainAxisAlignment::Center) // Centra i widget lungo l'asse principale
         .must_fill_main_axis(true)
         .padding(10.0)
-        .background(Color::TRANSPARENT);
+        .background(Color::rgba8(31,34,37,255));
 
     Flex::column()
         .with_child(controls)
@@ -433,5 +465,5 @@ pub fn compute_window_size(index: usize) -> anyhow::Result<(f64, f64, f64, f64)>
     let height = screen.virtual_work_rect().height();
     let top_x = screen.virtual_work_rect().x0;
     let top_y = screen.virtual_work_rect().y0;
-    Ok((width, height-0.5, top_x, top_y+20.0))
+    Ok((width, height, top_x, top_y))
 }

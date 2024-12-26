@@ -10,6 +10,18 @@ use druid::piet::{Color, RenderContext};
 use druid::widget::Widget;
 use druid::{Data, Env, EventCtx, Point, Rect, Lens, Event, LifeCycle, LifeCycleCtx, UpdateCtx, LayoutCtx, BoxConstraints, Size};
 
+/// The data model for the app.
+/// 
+/// Overview:
+/// - This struct defines a rectangle using two optional points.
+///
+/// Details:
+/// - The first point represents the top-left corner of the rectangle.
+/// - The second point represents the bottom-right corner of the rectangle.
+///
+/// Usage:
+/// - Both points are optional, allowing for flexibility in defining rectangles.
+
 #[derive(Clone, Data, Lens)]
 pub struct AppData {
     start_point: Option<Point>,
@@ -140,6 +152,8 @@ pub fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Calcola la dimensione della finestra in base al monitor specificato.
+
 pub fn compute_window_size(index: usize) -> anyhow::Result<(f64, f64, f64, f64)> {
     let screens = druid::Screen::get_monitors();
     println!("{:?}", screens);
@@ -149,6 +163,10 @@ pub fn compute_window_size(index: usize) -> anyhow::Result<(f64, f64, f64, f64)>
     let top_y = screens.to_vec()[index-1].virtual_work_rect().y0;
     Ok((width, height-0.5, top_x, top_y+0.5))
 }
+
+/// Salva le coordinate del rettangolo in un file.
+/// Se il file esiste già, lo sovrascrive.
+/// Il file si trova nella cartella config del progetto.
 
 fn save_point(rect: Rect, scale: Scale) {
     // Save the coordinates of the rectangle in a file
@@ -167,6 +185,8 @@ fn save_point(rect: Rect, scale: Scale) {
     file.write_all(data.as_bytes()).expect("Errore nella scrittura");
 }
 
+/// Restituisce il percorso del progetto.
+
 pub fn get_project_src_path() -> PathBuf {
     let exe_path = env::current_exe().expect("Failed to get current executable path");
 
@@ -177,6 +197,9 @@ pub fn get_project_src_path() -> PathBuf {
     }
     exe_dir.to_path_buf()
 }
+
+/// Calcola i rettangoli circostanti.
+/// Permette di disegnare un rettangolo trasparente su uno sfondo opaco.
 
 fn surrounding_rectangles(a: Rect, b: Rect) -> Vec<Rect> {
     let mut result = Vec::new();
