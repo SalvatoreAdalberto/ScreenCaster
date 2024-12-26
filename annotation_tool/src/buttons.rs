@@ -1,4 +1,4 @@
-use druid::{Menu, MenuItem, Point, WidgetExt};
+use druid::{Menu, MenuItem, Point, UnitPoint, WidgetExt};
 use druid::piet::{Color, RenderContext};
 use druid::widget::{Controller, Flex, Painter, Svg, SvgData, Widget};
 use druid::{Env, EventCtx, Event, Application};
@@ -23,7 +23,7 @@ pub fn quit_button() -> impl Widget<AppData> {
         .fix_size(25.0, 25.0); // Dimensione del contenuto SVG
 
     // Pittura per il background del bottone
-    let button_painter = Painter::new(|ctx, _data: &AppData, env| {
+    let button_painter = Painter::new(|ctx, _data: &AppData, _env| {
         let bounds = ctx.size().to_rect();
         ctx.fill(bounds, &Color::rgb8(51, 89, 218));
     });
@@ -31,6 +31,8 @@ pub fn quit_button() -> impl Widget<AppData> {
     // Contenitore per il bottone
     Flex::column()
         .with_child(svg)
+        .align_vertical(UnitPoint::CENTER)
+        .align_horizontal(UnitPoint::CENTER)
         .background(button_painter) // Sfondo colorato
         .fix_size(30.0, 30.0) // Dimensioni del bottone
         .controller(QuitButtonController) // Aggiungi comportamento al click
@@ -57,7 +59,7 @@ pub fn draw_button() -> impl Widget<AppData> {
         .fix_size(25.0, 25.0); // Dimensione del contenuto SVG
 
     // Pittura per il background del bottone
-    let button_painter = Painter::new(|ctx, _data: &AppData, env| {
+    let button_painter = Painter::new(|ctx, _data: &AppData, _env| {
         let bounds = ctx.size().to_rect();
         ctx.fill(bounds, &Color::rgb8(51, 89, 218));
     });
@@ -65,6 +67,8 @@ pub fn draw_button() -> impl Widget<AppData> {
     // Contenitore per il bottone
     Flex::column()
         .with_child(svg)
+        .align_vertical(UnitPoint::CENTER)
+        .align_horizontal(UnitPoint::CENTER)
         .background(button_painter) // Sfondo colorato
         .fix_size(30.0, 30.0) // Dimensioni del bottone
         .controller(DrawButtonController) // Aggiungi comportamento al click
@@ -90,7 +94,7 @@ pub fn view_button() -> impl Widget<AppData> {
         .fix_size(25.0, 25.0); // Dimensione del contenuto SVG
 
     // Pittura per il background del bottone
-    let button_painter = Painter::new(|ctx, _data: &AppData, env| {
+    let button_painter = Painter::new(|ctx, _data: &AppData, _env| {
         let bounds = ctx.size().to_rect();
         ctx.fill(bounds, &Color::rgb8(51, 89, 218));
     });
@@ -98,6 +102,8 @@ pub fn view_button() -> impl Widget<AppData> {
     // Contenitore per il bottone
     Flex::column()
         .with_child(svg)
+        .align_vertical(UnitPoint::CENTER)
+        .align_horizontal(UnitPoint::CENTER)
         .background(button_painter) // Sfondo colorato
         .fix_size(30.0, 30.0) // Dimensioni del bottone
         .controller(ViewButtonController) // Aggiungi comportamento al click
@@ -122,7 +128,7 @@ pub fn clear_button() -> impl Widget<AppData> {
         .fix_size(25.0, 25.0); // Dimensione del contenuto SVG
 
     // Pittura per il background del bottone
-    let button_painter = Painter::new(|ctx, _data: &AppData, env| {
+    let button_painter = Painter::new(|ctx, _data: &AppData, _env| {
         let bounds = ctx.size().to_rect();
         ctx.fill(bounds, &Color::rgb8(51, 89, 218));
     });
@@ -130,6 +136,8 @@ pub fn clear_button() -> impl Widget<AppData> {
     // Contenitore per il bottone
     Flex::column()
         .with_child(svg)
+        .align_vertical(UnitPoint::CENTER)
+        .align_horizontal(UnitPoint::CENTER)
         .background(button_painter) // Sfondo colorato
         .fix_size(30.0, 30.0) // Dimensioni del bottone
         .controller(ClearButtonController) // Aggiungi comportamento al click
@@ -154,7 +162,7 @@ pub fn undo_button() -> impl Widget<AppData> {
         .fix_size(25.0, 25.0); // Dimensione del contenuto SVG
 
     // Pittura per il background del bottone
-    let button_painter = Painter::new(|ctx, _data: &AppData, env| {
+    let button_painter = Painter::new(|ctx, _data: &AppData, _env| {
         let bounds = ctx.size().to_rect();
         ctx.fill(bounds, &Color::rgb8(51, 89, 218));
     });
@@ -162,6 +170,8 @@ pub fn undo_button() -> impl Widget<AppData> {
     // Contenitore per il bottone
     Flex::column()
         .with_child(svg)
+        .align_vertical(UnitPoint::CENTER)
+        .align_horizontal(UnitPoint::CENTER)
         .background(button_painter) // Sfondo colorato
         .fix_size(30.0, 30.0) // Dimensioni del bottone
         .controller(UndoButtonController) // Aggiungi comportamento al click
@@ -200,7 +210,7 @@ pub fn choose_shape_button() -> impl Widget<AppData> {
         .fix_size(25.0, 25.0); // Dimensione del contenuto SVG
 
     // Pittura per il background del bottone
-    let button_painter = Painter::new(|ctx, _data: &AppData, env| {
+    let button_painter = Painter::new(|ctx, _data: &AppData, _env| {
         let bounds = ctx.size().to_rect();
         ctx.fill(bounds, &Color::rgb8(51, 89, 218));
     });
@@ -208,6 +218,8 @@ pub fn choose_shape_button() -> impl Widget<AppData> {
     // Contenitore per il bottone
     Flex::column()
         .with_child(svg)
+        .align_vertical(UnitPoint::CENTER)
+        .align_horizontal(UnitPoint::CENTER)
         .background(button_painter) // Sfondo colorato
         .fix_size(30.0, 30.0) // Dimensioni del bottone
         .controller(ChooseShapeController) // Aggiungi comportamento al click
@@ -250,7 +262,7 @@ pub fn choose_color_button() -> impl Widget<AppData> {
         .fix_size(25.0, 25.0); // Dimensione del contenuto SVG
 
     // Pittura per il background del bottone
-    let button_painter = Painter::new(|ctx, _data: &AppData, env| {
+    let button_painter = Painter::new(|ctx, _data: &AppData, _env| {
         let bounds = ctx.size().to_rect();
         ctx.fill(bounds, &Color::rgb8(51, 89, 218));
     });
@@ -258,6 +270,8 @@ pub fn choose_color_button() -> impl Widget<AppData> {
     // Contenitore per il bottone
     Flex::column()
         .with_child(svg)
+        .align_vertical(UnitPoint::CENTER)
+        .align_horizontal(UnitPoint::CENTER)
         .background(button_painter) // Sfondo colorato
         .fix_size(30.0, 30.0) // Dimensioni del bottone
         .controller(ChooseColorController) // Aggiungi comportamento al click
