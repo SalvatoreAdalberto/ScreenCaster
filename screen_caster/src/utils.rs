@@ -15,9 +15,9 @@ use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::env;
 use std::path::{Path, PathBuf};
-use druid::Screen;
 use crate::streaming_server::CropArea;
 use dirs::download_dir;
+use screenshots::Screen;
 
 pub const HOTKEYS_CONFIG_PATH : &str = "../config/hotkeys.txt";
 pub const SAVE_DIRECTORY_CONFIG_PATH : &str = "../config/save_path.txt";
@@ -151,18 +151,28 @@ pub fn get_project_src_path() -> PathBuf {
 }
 
 #[cfg(not(target_os = "macos"))]
-pub fn compute_window_size(index: usize) -> anyhow::Result<(f64, f64, f64, f64)> {
-    let screens = Screen::get_monitors();
-    println!("{:?}", screens);
-    let width = screens.to_vec()[index-1].virtual_rect().width();
-    let height = screens.to_vec()[index-1].virtual_rect().height();
-    let top_x = screens.to_vec()[index-1].virtual_rect().x0;
-    let top_y = screens.to_vec()[index-1].virtual_rect().y0;
-    Ok((width, height, top_x, top_y))
+pub fn compute_window_size()-> anyhow::Result<(i32, i32, i32, i32)> {
+    let screens = Screen::all().context("Impossible to retrieve available screens.")?;
+
+    let mut leftmost = i32::MAX;
+    let mut rightmost = i32::MIN;
+    let mut topmost = i32::MAX;
+    let mut bottommost = i32::MIN;
+    for screen in &screens {
+        leftmost = leftmost.min(screen.display_info.x);
+        rightmost = rightmost.max(screen.display_info.x as i32 + (screen.display_info.width as f64 * screen.display_info.scale_factor as f64) as i32);
+        topmost = topmost.min(screen.display_info.y);
+        bottommost = bottommost.max(screen.display_info.y as i32 + (screen.display_info.height as f64 * screen.display_info.scale_factor as f64) as i32);
+    }
+
+    let width = rightmost - leftmost;
+    let height = bottommost - topmost;
+
+    Ok((width, height, leftmost, topmost))
 }
 
 pub fn count_screens() -> usize {
-    let screens = Screen::get_monitors();
+    let screens = Screen::all().unwrap();
     screens.len()
 }
 
