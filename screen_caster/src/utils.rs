@@ -19,7 +19,6 @@ use druid::Screen;
 use crate::streaming_server::CropArea;
 use dirs::download_dir;
 
-pub const STREAMERS_LIST_PATH : &str = "../config/streamers_list.txt";
 pub const HOTKEYS_CONFIG_PATH : &str = "../config/hotkeys.txt";
 pub const SAVE_DIRECTORY_CONFIG_PATH : &str = "../config/save_path.txt";
 
@@ -140,29 +139,6 @@ fn calculate_subnet_range(ip: Ipv4Addr, netmask: Ipv4Addr) -> (Ipv4Addr, Ipv4Add
 }
 
 
-pub fn get_streamers_map() -> std::collections::HashMap<String, String> {
-    let mut streamers_map = std::collections::HashMap::new();
-    let file = std::fs::File::open(STREAMERS_LIST_PATH).expect("File non trovato");
-    let mut reader = std::io::BufReader::new(file);
-    let mut line = String::new();
-
-    while let Ok(_) = reader.read_line(&mut line) {
-        let parts: Vec<&str> = line.split(',').map(|s| s.trim()).collect();
-        if parts.len() != 2 {
-            break;
-        }
-        println!("{:?}", parts);
-        let key = parts[0].to_string();
-        let value = parts[1].to_string();
-        streamers_map.insert(key, value);
-        line.clear();
-    }
-
-    println!("{:?}", streamers_map);
-    streamers_map
-
-}
-
 pub fn get_project_src_path() -> PathBuf {
     let exe_path = env::current_exe().expect("Failed to get current executable path");
     let mut exe_dir = exe_path.parent().expect("Failed to get parent directory");
@@ -174,14 +150,15 @@ pub fn get_project_src_path() -> PathBuf {
     exe_dir.to_path_buf()
 }
 
+#[cfg(not(target_os = "macos"))]
 pub fn compute_window_size(index: usize) -> anyhow::Result<(f64, f64, f64, f64)> {
     let screens = Screen::get_monitors();
     println!("{:?}", screens);
     let width = screens.to_vec()[index-1].virtual_rect().width();
     let height = screens.to_vec()[index-1].virtual_rect().height();
     let top_x = screens.to_vec()[index-1].virtual_rect().x0;
-    let top_y = screens.to_vec()[index-1].virtual_work_rect().y0;
-    Ok((width, height-0.5, top_x, top_y+0.5))
+    let top_y = screens.to_vec()[index-1].virtual_rect().y0;
+    Ok((width, height, top_x, top_y))
 }
 
 pub fn count_screens() -> usize {
@@ -212,7 +189,7 @@ pub fn get_ffmpeg_command(screen_index:usize, crop: Option<CropArea>) -> String 
                 format!("-f gdigrab -framerate 30 -offset_x {} -offset_y {} -video_size {}x{} -i desktop -f mpegts pipe:1", crop.x_offset, crop.y_offset, crop.width, crop.height)
             }
             None => {
-                format!("-f gdigrab -framerate 30 -offset_x {} -offset_y {} -video_size {}x{} -i desktop -f mpegts pipe:1", top_x, top_y-0.5, width, height+0.5)
+                format!("-f gdigrab -framerate 30 -offset_x {} -offset_y {} -video_size {}x{} -i desktop -f mpegts pipe:1", top_x, top_y, width, height)
             }
         }
     }
@@ -222,10 +199,10 @@ pub fn get_ffmpeg_command(screen_index:usize, crop: Option<CropArea>) -> String 
         let (width, height, top_x, top_y) = compute_window_size(screen_index).unwrap();
         match crop {
             Some(crop) => {
-                format!("ffmpeg -f x11grab -framerate 30 -video_size {}x{} -i :0.0+{},{} -draw_mouse 1 -tune zerolatency -f mpegts -codec:v libx264 -preset faster -crf 28 -pix_fmt yuv420p pipe:1", crop.width, crop.height, crop.x_offset, crop.y_offset)
+                format!("-f x11grab -framerate 30 -video_size {}x{} -i :0.0+{},{} -draw_mouse 1 -tune zerolatency -f mpegts -codec:v libx264 -preset faster -crf 28 -pix_fmt yuv420p pipe:1", crop.width, crop.height, crop.x_offset, crop.y_offset)
             }
             None => {
-                format!("ffmpeg -f x11grab -framerate 30 -video_size {}x{} -i :0.0+{},{} -draw_mouse 1 -tune zerolatency -f mpegts -codec:v libx264 -preset faster -crf 28 -pix_fmt yuv420p pipe:1", width, height+0.5, top_x, top_y-0.5)
+                format!("-f x11grab -framerate 30 -video_size {}x{} -i :0.0+{},{} -draw_mouse 1 -tune zerolatency -f mpegts -codec:v libx264 -preset faster -crf 28 -pix_fmt yuv420p pipe:1", width, height, top_x, top_y)
             }
         }
     }
