@@ -151,24 +151,17 @@ pub fn get_project_src_path() -> PathBuf {
 }
 
 #[cfg(not(target_os = "macos"))]
-pub fn compute_window_size()-> anyhow::Result<(i32, i32, i32, i32)> {
-    let screens = Screen::all().context("Impossible to retrieve available screens.")?;
+pub fn compute_window_size(index: usize)-> anyhow::Result<(u32, u32, u32, u32)> {
+    let screens = Screen::all().unwrap();
+    println!("{:?}", screens);
 
-    let mut leftmost = i32::MAX;
-    let mut rightmost = i32::MIN;
-    let mut topmost = i32::MAX;
-    let mut bottommost = i32::MIN;
-    for screen in &screens {
-        leftmost = leftmost.min(screen.display_info.x);
-        rightmost = rightmost.max(screen.display_info.x as i32 + (screen.display_info.width as f64 * screen.display_info.scale_factor as f64) as i32);
-        topmost = topmost.min(screen.display_info.y);
-        bottommost = bottommost.max(screen.display_info.y as i32 + (screen.display_info.height as f64 * screen.display_info.scale_factor as f64) as i32);
-    }
+    let screen = screens[index - 1];
+    let top_x = screen.display_info.x as u32;
+    let top_y = screen.display_info.y as u32;
+    let width = screen.display_info.width;
+    let height = screen.display_info.height;
 
-    let width = rightmost - leftmost;
-    let height = bottommost - topmost;
-
-    Ok((width, height, leftmost, topmost))
+    Ok((width, height, top_x, top_y))
 }
 
 pub fn count_screens() -> usize {
@@ -209,10 +202,10 @@ pub fn get_ffmpeg_command(screen_index:usize, crop: Option<CropArea>) -> String 
         let (width, height, top_x, top_y) = compute_window_size(screen_index).unwrap();
         match crop {
             Some(crop) => {
-                format!("-f x11grab -framerate 30 -video_size {}x{} -i :0.0+{},{} -draw_mouse 1 -tune zerolatency -f mpegts -codec:v libx264 -preset faster -crf 28 -pix_fmt yuv420p pipe:1", crop.width, crop.height, crop.x_offset, crop.y_offset)
+                format!("-f x11grab -framerate 30 -video_size {}x{} -i :0.0+{},{} -f mpegts pipe:1", crop.width, crop.height, crop.x_offset, crop.y_offset)
             }
             None => {
-                format!("-f x11grab -framerate 30 -video_size {}x{} -i :0.0+{},{} -draw_mouse 1 -tune zerolatency -f mpegts -codec:v libx264 -preset faster -crf 28 -pix_fmt yuv420p pipe:1", width, height, top_x, top_y)
+                format!("-f x11grab -framerate 30 -video_size {}x{} -i :0.0+{},{} -f mpegts pipe:1", width, height, top_x, top_y)
             }
         }
     }
