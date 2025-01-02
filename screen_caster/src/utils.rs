@@ -2,7 +2,9 @@
 use pnet::datalink;
 #[cfg(target_os = "windows")]
 use ipconfig::{get_adapters, OperStatus};
+#[cfg(target_os = "windows")]
 use if_addrs::{IfAddr, get_if_addrs};
+#[cfg(target_os = "windows")]
 use ipnet::Ipv4Net;
 use ipnetwork::IpNetwork;
 
@@ -126,7 +128,7 @@ pub fn is_ip_in_lan(ip_to_check: &str) -> bool {
     false
 }
 
-
+#[cfg(target_os = "windows")]
 fn calculate_subnet_range(ip: Ipv4Addr, netmask: Ipv4Addr) -> (Ipv4Addr, Ipv4Addr) {
     let ip_u32 = u32::from(ip);
     let mask_u32 = u32::from(netmask);

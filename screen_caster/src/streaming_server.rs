@@ -132,7 +132,7 @@ impl StreamingServer {
                 // Ricevi il pacchetto dal client
                 let (bytes_received, client_address) = match listener_socket.recv_from(&mut buffer) {
                     Ok(res) => res,
-                    Err(e) => {
+                    Err(_) => {
                         continue
                     }
                 };

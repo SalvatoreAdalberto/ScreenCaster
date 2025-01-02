@@ -15,7 +15,6 @@ const STDIN_INPUT: Selector<String> = Selector::new("stdin.input");
 
 #[derive(PartialEq, Debug, Clone, Data)]
 pub enum OverlayState {
-    View,
     Drawing,
     Idle,
 }
@@ -190,16 +189,10 @@ impl Widget<AppData> for DrawingOverlay {
     }
 
     fn paint(&mut self, ctx: &mut druid::PaintCtx, data: &AppData, _env: &Env) {
-        // Background fill
-        if data.overlay_state == OverlayState::View {
-            let background_rect = ctx.size().to_rect();
-            ctx.fill(background_rect, &Color::rgba8(0xff, 0xff, 0xff, 0));
-        }
-        else {
-            let background_rect = ctx.size().to_rect();
-            ctx.fill(background_rect, &Color::rgba8(0xff, 0xff, 0xff, 0x4));
-        }
-
+        
+        let background_rect = ctx.size().to_rect();
+        ctx.fill(background_rect, &Color::rgba8(0xff, 0xff, 0xff, 0x4));
+    
         // Draw existing shapes
         for shape in &data.shapes {
             match shape {
@@ -286,11 +279,10 @@ pub fn main() -> anyhow::Result<()> {
         .show_titlebar(false)
         .window_size(Size::new(width, height))
         .set_position((x, y));
-    //.resizable(true);
 
     let initial_data = AppData {
         handled_monitors: vec![0],
-        overlay_state: OverlayState::View,
+        overlay_state: OverlayState::Idle,
         start_point: None,
         end_point: None,
         shapes: Vec::new(),
@@ -339,10 +331,6 @@ fn start_stdin_reader(event_sink: ExtEventSink) {
 fn build_root_widget() -> impl Widget<AppData> {
     let quit_button = buttons::quit_button();
 
-    let draw_button = buttons::draw_button();
-
-    let view_button = buttons::view_button();
-
     let clear_button = buttons::clear_button();
 
     let undo_button = buttons::undo_button();
@@ -355,10 +343,6 @@ fn build_root_widget() -> impl Widget<AppData> {
         .with_flex_spacer(1.0) // Spazio flessibile a sinistra
         .with_child(quit_button)
         .with_spacer(25.0) // Spazio fisso tra i pulsanti
-        .with_child(draw_button)
-        .with_spacer(25.0)
-        .with_child(view_button)
-        .with_spacer(25.0)
         .with_child(clear_button)
         .with_spacer(25.0)
         .with_child(undo_button)

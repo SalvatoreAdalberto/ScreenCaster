@@ -1,10 +1,10 @@
 use std::collections::HashMap;
-use iced::{Element, Alignment, Color, Theme, Length, theme, Padding, alignment::Horizontal, ContentFit};
+use iced::{Element, Alignment, Color, Theme, Length, theme};
 use iced::widget::{Row, Text, TextInput, Button, Column, Container, Svg};
 use rusqlite::{params, Connection};
 use uuid::Uuid;
 use thiserror::Error;
-use std::net::{Ipv4Addr};
+use std::net::Ipv4Addr;
 
 #[derive(Debug, Error, Clone, Copy)]
 pub enum TableError {
@@ -380,7 +380,7 @@ struct RecordStyle;
 impl iced::widget::container::StyleSheet for RecordStyle {
     type Style = Theme;
 
-    fn appearance(&self, style: &Self::Style) -> iced::widget::container::Appearance {
+    fn appearance(&self, _style: &Self::Style) -> iced::widget::container::Appearance {
         iced::widget::container::Appearance {
             background: Some(Color::TRANSPARENT.into()),
             border_width: 1.0,
@@ -463,7 +463,7 @@ struct BannerStyle;
 impl iced::widget::container::StyleSheet for BannerStyle {
     type Style = Theme;
 
-    fn appearance(&self, style: &Self::Style) -> iced::widget::container::Appearance {
+    fn appearance(&self, _style: &Self::Style) -> iced::widget::container::Appearance {
         iced::widget::container::Appearance {
             background: Some(Color::from_rgb(0.9, 0.1, 0.1).into()), // Red background
             border_radius: 5.0.into(),

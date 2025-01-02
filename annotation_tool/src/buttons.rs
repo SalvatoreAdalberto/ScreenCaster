@@ -4,7 +4,7 @@ use druid::widget::{Controller, Flex, Painter, Svg, SvgData, Widget};
 use druid::{Env, EventCtx, Event, Application};
 use std::str::FromStr;
 
-use crate::{AppData, OverlayState, ShapeType};
+use crate::{AppData, ShapeType};
 struct QuitButtonController;
 
 impl<W: Widget<AppData>> Controller<AppData, W> for QuitButtonController {
@@ -36,77 +36,6 @@ pub fn quit_button() -> impl Widget<AppData> {
         .background(button_painter) // Sfondo colorato
         .fix_size(30.0, 30.0) // Dimensioni del bottone
         .controller(QuitButtonController) // Aggiungi comportamento al click
-}
-
-
-struct DrawButtonController;
-
-impl<W: Widget<AppData>> Controller<AppData, W> for DrawButtonController {
-    fn event(&mut self, child: &mut W, ctx: &mut EventCtx, event: &Event, data: &mut AppData, env: &Env) {
-        if let Event::MouseDown(_) = event {
-            data.overlay_state = OverlayState::Drawing;
-            data.current_background_color = Color::rgba8(0xff, 0xff, 0xff, 0x4);
-            ctx.request_paint();
-        }
-        child.event(ctx, event, data, env);
-    }
-}
-
-pub fn draw_button() -> impl Widget<AppData> {
-    // Carica l'SVG
-    let svg_data = include_str!("../../assets/draw.svg"); // Percorso al tuo SVG
-    let svg = Svg::new(SvgData::from_str(svg_data).unwrap())
-        .fix_size(25.0, 25.0); // Dimensione del contenuto SVG
-
-    // Pittura per il background del bottone
-    let button_painter = Painter::new(|ctx, _data: &AppData, _env| {
-        let bounds = ctx.size().to_rect();
-        ctx.fill(bounds, &Color::rgb8(51, 89, 218));
-    });
-
-    // Contenitore per il bottone
-    Flex::column()
-        .with_child(svg)
-        .align_vertical(UnitPoint::CENTER)
-        .align_horizontal(UnitPoint::CENTER)
-        .background(button_painter) // Sfondo colorato
-        .fix_size(30.0, 30.0) // Dimensioni del bottone
-        .controller(DrawButtonController) // Aggiungi comportamento al click
-}
-
-struct ViewButtonController;
-
-impl<W: Widget<AppData>> Controller<AppData, W> for ViewButtonController {
-    fn event(&mut self, child: &mut W, ctx: &mut EventCtx, event: &Event, data: &mut AppData, env: &Env) {
-        if let Event::MouseDown(_) = event {
-            data.overlay_state = OverlayState::View;
-            data.current_background_color = Color::rgba8(0xff, 0xff, 0xff, 0x00);
-            ctx.request_paint();
-        }
-        child.event(ctx, event, data, env);
-    }
-}
-
-pub fn view_button() -> impl Widget<AppData> {
-    // Carica l'SVG
-    let svg_data = include_str!("../../assets/view.svg"); // Percorso al tuo SVG
-    let svg = Svg::new(SvgData::from_str(svg_data).unwrap())
-        .fix_size(25.0, 25.0); // Dimensione del contenuto SVG
-
-    // Pittura per il background del bottone
-    let button_painter = Painter::new(|ctx, _data: &AppData, _env| {
-        let bounds = ctx.size().to_rect();
-        ctx.fill(bounds, &Color::rgb8(51, 89, 218));
-    });
-
-    // Contenitore per il bottone
-    Flex::column()
-        .with_child(svg)
-        .align_vertical(UnitPoint::CENTER)
-        .align_horizontal(UnitPoint::CENTER)
-        .background(button_painter) // Sfondo colorato
-        .fix_size(30.0, 30.0) // Dimensioni del bottone
-        .controller(ViewButtonController) // Aggiungi comportamento al click
 }
 
 struct ClearButtonController;

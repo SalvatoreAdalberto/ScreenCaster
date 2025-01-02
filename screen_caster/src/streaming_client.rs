@@ -198,7 +198,7 @@ impl StreamingClient {
 
                     }
                     Err(_) => {
-                        tx_sm.send(VideoPlayerMessage::NoConnection);
+                        let _ = tx_sm.send(VideoPlayerMessage::NoConnection);
                         break;
                     }
                 }
@@ -286,7 +286,7 @@ impl StreamingClient {
                 eprintln!("Connection timeout");
                 break;
             }
-            socket.send_to(&message.as_bytes(), &address);
+            let _ = socket.send_to(&message.as_bytes(), &address);
             match socket.recv(&mut buffer) {
                 Ok(number_of_bytes) => {
                     let data = &buffer[..number_of_bytes];
@@ -425,7 +425,7 @@ impl StreamingClient {
                 None
             }
             VideoPlayerMessage::Exit => {
-                self.tx_connection_status.send(VideoPlayerMessage::Exit);
+                let _ = self.tx_connection_status.send(VideoPlayerMessage::Exit);
                 if let Some(_) = self.pid_record {
                     self.stop_record();
                 }
@@ -440,7 +440,7 @@ impl StreamingClient {
             }
             VideoPlayerMessage::GifPlayerMessage(GifPlayerMessage) => {
                 if let  Some(gif) = self.gif_widget.as_mut(){
-                    gif.update(GifPlayerMessage);
+                    let _ = gif.update(GifPlayerMessage);
                 }
                 None
             }
@@ -517,7 +517,7 @@ impl StreamingClient {
 impl Drop for StreamingClient {
     fn drop(&mut self) {
         println!("Dropping Streaming Client");
-        self.tx_connection_status.try_send(VideoPlayerMessage::Exit);
+        let _ = self.tx_connection_status.try_send(VideoPlayerMessage::Exit);
         if let Some(_) = self.pid_record {
             self.stop_record();
         }

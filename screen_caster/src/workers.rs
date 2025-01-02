@@ -5,7 +5,6 @@ use std::sync::{Arc, Mutex, Condvar};
 use ffmpeg_sidecar::event::OutputVideoFrame;
 use iced::widget::image::Handle;
 use image::{RgbImage, RgbaImage, DynamicImage};
-use std::time::Duration;
 
 pub struct FrameDispatcher{
     n_workers: usize,
