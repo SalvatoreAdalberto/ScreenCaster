@@ -1,5 +1,4 @@
-use ffmpeg_sidecar::command;
-use iced::widget::{Button, Column, Container, Row, Text, TextInput, Scrollable, PickList, Space};
+use iced::widget::{Button, Column, Container, PickList, Row, Scrollable, Space, Svg, Text, TextInput};
 use iced::{Alignment, Element, Length, Application, Command, Settings, Theme, Subscription, alignment::Horizontal};
 use crate::utils;
 use std::sync::{Arc, Mutex};
@@ -10,7 +9,6 @@ use std::process::{Command as Command2, Output, Stdio};
 use std::collections::HashMap;
 use crate::streaming_client::{StreamingClient, VideoPlayerMessage};
 use crate::streamers_table::{StreamersTable, StreamersTableMessage};
-use iced::Event;
 use native_dialog::FileDialog;
 
 // Definiamo i messaggi dell'applicazione
@@ -336,16 +334,24 @@ impl Application for ScreenCaster {
                 self.state = AppStateEnum::Settings;
             }
             Message::StartRecordHotkeyChanged(key) => {
-                self.start_shortcut = key
+                if key.as_str().len() <= 1 {
+                    self.start_shortcut = key.to_uppercase()
+                }
             }
             Message::StopRecordHotkeyChanged(key) => {
-                self.stop_shortcut = key
+                if key.as_str().len() <= 1 {
+                    self.stop_shortcut = key.to_uppercase()
+                }
             }
             Message::ClearHotkeyChanged(key) => {
-                self.clear_shortcut = key
+                if key.as_str().len() <= 1 {
+                    self.clear_shortcut = key.to_uppercase()
+                }
             }
             Message::CloseHotkeyChanged(key) => {
-                self.close_shortcut = key
+                if key.as_str().len() <= 1 {
+                    self.close_shortcut = key.to_uppercase();
+                }
             }
             Message::ToggleAnnotationTool => {
                  if !app_state.check_annotation_open() {
@@ -496,13 +502,15 @@ impl ScreenCaster {
                     .spacing(20)
                     .align_items(Alignment::Center)
                     .push(
-                        Button::new(Text::new("Condividi Schermo"))
+                        Button::new(Text::new("Condividi Schermo").horizontal_alignment(Horizontal::Center))
                             .padding(10)
+                            .width(Length::Fixed(210.0))
                             .on_press(Message::GoToShareScreen),
                     )
                     .push(
-                        Button::new(Text::new("Guarda Schermo Condiviso"))
+                        Button::new(Text::new("Guarda Schermo Condiviso").horizontal_alignment(Horizontal::Center))
                             .padding(10)
+                            .width(Length::Fixed(210.0))
                             .on_press(Message::GoToViewScreen),
                     ),
             )
@@ -511,8 +519,9 @@ impl ScreenCaster {
                     .spacing(20)
                     .align_items(Alignment::Center)
                     .push(
-                        Button::new(Text::new("Impostazioni"))
+                        Button::new(Text::new("Impostazioni").horizontal_alignment(Horizontal::Center))
                             .padding(10)
+                            .width(Length::Fixed(210.0))
                             .on_press(Message::GoToSettings),
                     )
             );
@@ -574,13 +583,15 @@ impl ScreenCaster {
                     .spacing(40)
                     .align_items(Alignment::Center)
                     .push(
-                        Button::new(Text::new("Torna alla Home"))
+                        Button::new(Text::new("Torna alla Home").horizontal_alignment(Horizontal::Center))
                             .padding(10)
+                            .width(Length::Fixed(200.0))
                             .on_press(Message::GoBackHome),
                     )
                     .push(
-                        Button::new(Text::new("Conferma"))
+                        Button::new(Text::new("Conferma").horizontal_alignment(Horizontal::Center))
                             .padding(10)
+                            .width(Length::Fixed(200.0))
                             .on_press(Message::ScreenSelected),
                     ),
             );
@@ -604,14 +615,16 @@ impl ScreenCaster {
                     .spacing(20)
                     .align_items(Alignment::Center)
                     .push(
-                        Button::new(Text::new("Avvia Screen Casting"))
+                        Button::new(Text::new("Avvia Screen Casting").horizontal_alignment(Horizontal::Center))
                             .padding(10)
+                            .width(Length::Fixed(200.0))
                             .on_press(Message::StartCasting),
                     ),
             )
             .push(
-                Button::new(Text::new("Torna alla Home"))
+                Button::new(Text::new("Torna alla Home").horizontal_alignment(Horizontal::Center))
                     .padding(10)
+                    .width(Length::Fixed(200.0))
                     .on_press(Message::GoBackHome),
             );
 
@@ -633,13 +646,15 @@ impl ScreenCaster {
                     .spacing(20)
                     .align_items(Alignment::Center)
                     .push(
-                        Button::new(Text::new("Ferma Screen Casting"))
+                        Button::new(Text::new("Ferma Screen Casting").horizontal_alignment(Horizontal::Center))
                             .padding(10)
+                            .width(Length::Fixed(200.0))
                             .on_press(Message::StopCasting),
                     )
                     .push(
-                        Button::new(Text::new("Annotation tool"))
+                        Button::new(Text::new("Annotation tool").horizontal_alignment(Horizontal::Center))
                             .padding(10)
+                            .width(Length::Fixed(200.0))
                             .on_press(Message::ToggleAnnotationTool)
                     ),
             );
@@ -657,7 +672,7 @@ impl ScreenCaster {
         let content = Column::new()
             .spacing(20)
             .align_items(Alignment::Center)
-            .push(Text::new("Stai guardando uno schermo condiviso").size(30))
+            .push(Text::new("Inserisci l'indirizzo IP").size(30))
             .push(
                 TextInput::new(
                     "Inserisci l'indirizzo IP...",
@@ -698,13 +713,13 @@ impl ScreenCaster {
                     .spacing(20)
                     .align_items(Alignment::Center)
                     .push(
-                        Button::new(Text::new("Connetti"))
+                        Button::new(Text::new("Connetti").horizontal_alignment(Horizontal::Center))
                             .padding(10)
                             .width(Length::Fixed(200.0))
                             .on_press(Message::TryConnect),
                     )
                     .push(
-                        Button::new(Text::new("Gestisci lista streamers"))
+                        Button::new(Text::new("Gestisci lista streamers").horizontal_alignment(Horizontal::Center))
                             .padding(10)
                             .width(Length::Fixed(200.0))
                             .on_press(Message::GoToListStreamers),
@@ -715,7 +730,7 @@ impl ScreenCaster {
                     .spacing(20)
                     .align_items(Alignment::Center)
                     .push(
-                        Button::new(Text::new("Torna alla home"))
+                        Button::new(Text::new("Torna alla home").horizontal_alignment(Horizontal::Center))
                             .padding(10)
                             .width(Length::Fixed(200.0))
                             .on_press(Message::GoBackHome),
@@ -738,7 +753,7 @@ impl ScreenCaster {
                         .padding(10)
                         .align_items(Alignment::Center)
                         .push(
-                            Button::new(Text::new("Stop watching"))
+                            Button::new(Text::new("Stop watching").horizontal_alignment(Horizontal::Center))
                                 .padding(10)
                                 .width(Length::Fixed(200.0))
                                 .on_press(Message::StopConnection),
@@ -780,13 +795,15 @@ impl ScreenCaster {
                     .spacing(20)
                     .align_items(Alignment::Center)
                     .push(
-                        Button::new(Text::new("Configura hotkeys"))
+                        Button::new(Text::new("Configura hotkeys").horizontal_alignment(Horizontal::Center))
                             .padding(10)
+                            .width(Length::Fixed(200.0))
                             .on_press(Message::GoToChangeHotKeys),
                     )
                     .push(
-                        Button::new(Text::new("Configura save directory"))
+                        Button::new(Text::new("Configura save directory").horizontal_alignment(Horizontal::Center))
                             .padding(10)
+                            .width(Length::Fixed(200.0))
                             .on_press(Message::GoToChangeDirectory),
                     )
             )
@@ -795,8 +812,9 @@ impl ScreenCaster {
                     .spacing(20)
                     .align_items(Alignment::Center)
                     .push(
-                        Button::new(Text::new("Torna alla Home"))
+                        Button::new(Text::new("Torna alla Home").horizontal_alignment(Horizontal::Center))
                             .padding(10)
+                            .width(Length::Fixed(200.0))
                             .on_press(Message::GoBackHome),
                     )
             );
@@ -819,67 +837,88 @@ impl ScreenCaster {
                     .spacing(20)
                     .align_items(Alignment::Center)
                     .push(
-                        Text::new("Inserisci la key per iniziare la registrazione:").size(20)
-                    )
-                    .push(
-                        TextInput::new(
-                            "Inserisci l'hotkey per iniziare la registrazione",
-                            &self.start_shortcut.to_uppercase(),
+                    Column::new()
+                            .align_items(Alignment::Start)
+                            .width(Length::Fixed(200.0))
+                            .push(Text::new("Avvia la registrazione:").size(20))
                         )
-                            .padding(10)
-                            .width(Length::Fixed(50.0))
-                            .on_input(Message::StartRecordHotkeyChanged),
-                    )
+                        .push(
+                    Column::new()
+                            .align_items(Alignment::End)
+                            .push(TextInput::new(
+                                "Inserisci l'hotkey per iniziare la registrazione",
+                                &self.start_shortcut.to_uppercase(),
+                            )
+                                .padding(10)
+                                .width(Length::Fixed(50.0))
+                                .on_input(Message::StartRecordHotkeyChanged),)
+                        )
             )
             .push(
                 Row::new()
                     .spacing(20)
                     .align_items(Alignment::Center)
                     .push(
-                        Text::new("Inserisci la key per fermare la registrazione:").size(20)
+                        Column::new()
+                            .align_items(Alignment::Start)
+                            .width(Length::Fixed(200.0))
+                            .push(Text::new("Ferma la registrazione:").size(20))
                     )
                     .push(
+                Column::new()
+                            .align_items(Alignment::End)
+                            .push(
                         TextInput::new(
                             "Inserisci l'hotkey per fermatre la registrazione",
                             &self.stop_shortcut.to_uppercase(),
                         )
                             .padding(10)
                             .width(Length::Fixed(50.0))
-                            .on_input(Message::StopRecordHotkeyChanged),
+                            .on_input(Message::StopRecordHotkeyChanged),)
                     )
             )
             .push(
-                Row::new()
+            Row::new()
                     .spacing(20)
                     .align_items(Alignment::Center)
                     .push(
-                        Text::new("Inserisci la key per cancellare le annotazioni:").size(20)
+                        Column::new()
+                                .align_items(Alignment::Start)
+                                .width(Length::Fixed(200.0))
+                                .push(Text::new("Cancella le annotazioni:").size(20))
                     )
                     .push(
-                        TextInput::new(
+                Column::new()
+                            .align_items(Alignment::End)
+                            .push(TextInput::new(
                             "Inserisci l'hotkey per cancellare le annotazioni",
                             &self.clear_shortcut.to_uppercase(),
                         )
                             .padding(10)
                             .width(Length::Fixed(50.0))
                             .on_input(Message::ClearHotkeyChanged),
-                    )
+                    ))
             )
             .push(
                 Row::new()
                     .spacing(20)
                     .align_items(Alignment::Center)
                     .push(
-                        Text::new("Inserisci la key per terminare la sessione:").size(20)
+                Column::new()
+                                .align_items(Alignment::Start)
+                                .width(Length::Fixed(200.0))
+                                .push(Text::new("Termina la sessione:").size(20))
                     )
                     .push(
-                        TextInput::new(
+                Column::new()
+                            .align_items(Alignment::End)
+                            .push(TextInput::new(
                             "Inserisci l'hotkey per terminare la sessione",
                             &self.close_shortcut.to_uppercase(),
                         )
                             .padding(10)
                             .width(Length::Fixed(50.0))
-                            .on_input(Message::CloseHotkeyChanged),
+                            .on_input(Message::CloseHotkeyChanged),)
                     )
             )
             .push(
@@ -887,7 +926,7 @@ impl ScreenCaster {
                     .spacing(20)
                     .align_items(Alignment::Center)
                     .push(
-                        Button::new(Text::new("Salva hotkeys"))
+                        Button::new(Text::new("Salva hotkeys").horizontal_alignment(Horizontal::Center))
                             .padding(10)
                             .width(Length::Fixed(200.0))
                             .on_press(Message::SaveHotKeys),
@@ -912,10 +951,11 @@ impl ScreenCaster {
                     .spacing(20)
                     .align_items(Alignment::Center)
                     .push(
-                        Text::new(self.selected_directory.clone())
+                        Text::new(self.selected_directory.clone()).size(20)
                     )
                     .push(
-                        Button::new(Text::new("Sfoglia"))
+                        Button::new(Svg::from_path("../assets/folder.svg"))
+                            .padding(10)
                             .on_press(Message::BrowseDirectory),
                     )
             )
@@ -924,8 +964,9 @@ impl ScreenCaster {
                     .spacing(20)
                     .align_items(Alignment::Center)
                     .push(
-                        Button::new(Text::new("Salva modifiche"))
+                        Button::new(Text::new("Salva modifiche").horizontal_alignment(Horizontal::Center))
                             .padding(10)
+                            .width(Length::Fixed(200.0))
                             .on_press(Message::SaveDirectory),
                     )
             );

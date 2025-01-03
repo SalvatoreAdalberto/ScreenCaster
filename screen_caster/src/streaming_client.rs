@@ -473,7 +473,7 @@ impl StreamingClient {
                     .into()
             },
             StreamingClientStateEnum::Retry => {
-                Button::new(Text::new("Riprova"))
+                Button::new(Text::new("Riprova").horizontal_alignment(iced::alignment::Horizontal::Center))
                     .padding(10)
                     .width(Length::Fixed(200.0))
                     .on_press(VideoPlayerMessage::Connect)
@@ -490,13 +490,13 @@ impl StreamingClient {
         match self.state{
             StreamingClientStateEnum::Streaming => {
                 if let Some(_) = self.pid_record{
-                    Some(Button::new(Text::new("Stop Record"))
+                    Some(Button::new(Text::new("Stop Record").horizontal_alignment(iced::alignment::Horizontal::Center))
                         .padding(10)
                         .width(Length::Fixed(200.0))
                         .on_press(VideoPlayerMessage::StopRecord)
                         .into())
                 }else{
-                    Some(Button::new(Text::new("Start Record"))
+                    Some(Button::new(Text::new("Start Record").horizontal_alignment(iced::alignment::Horizontal::Center))
                         .padding(10)
                         .width(Length::Fixed(200.0))
                         .on_press(VideoPlayerMessage::StartRecord)
