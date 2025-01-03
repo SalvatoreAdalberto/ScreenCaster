@@ -751,10 +751,11 @@ impl ScreenCaster {
                             .width(Length::Fixed(200.0))
                             .on_press(Message::GoBackHome),
                     )
-            );
+                );
         
          match self.state {
             AppStateEnum::ConnectInputError(error) => Container::new(ConnectInputErrorBanner::overlay(error, content, Message::CloseBanner))
+                .height(Length::Fill)
                 .center_y()
                 .into(),
             _ =>  Container::new(content)
@@ -853,7 +854,7 @@ impl ScreenCaster {
         let content = Column::new()
             .spacing(20)
             .align_items(Alignment::Center)
-            .push(Text::new("Configurazione hotkey").size(30))
+            .push(Text::new("Configurazione hotkeys").size(30))
             .push(
                 Row::new()
                     .spacing(20)

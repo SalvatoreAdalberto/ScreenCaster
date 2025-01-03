@@ -86,7 +86,7 @@ pub trait Banner<'a> {
         // Stack the banner on top of the content
         let content = Column::new()
             .push(overlay)
-            .push(Container::new(content).padding(20)).align_items(Alignment::Center);
+            .push(Container::new(content).padding(20).height(Length::Fill).center_y()).align_items(Alignment::Center);
 
         Element::from(Container::new(content))
         
