@@ -5,24 +5,12 @@ use rusqlite::{params, Connection};
 use uuid::Uuid;
 use thiserror::Error;
 use std::net::Ipv4Addr;
+use crate::error_banner::{Banner, InputError};
 
-#[derive(Debug, Error, Clone, Copy)]
-pub enum TableError {
+struct InputErrorBanner;
 
-    #[error("The name is already present.")]
-    NameAlreadyPresent,
-
-    #[error("The IP address is already present.")]
-    IpAlreadyPresent,
-
-    #[error("The provided value is not a valid Id.")]
-    IdNotFound,
-
-    #[error("The provided value is not a valid name.")]
-    NotAName,
-
-    #[error("The provided value is not a valid IP address.")]
-    NotAnIp,
+impl<'a> Banner<'a> for InputErrorBanner{
+    type ExtMessage = StreamersTableMessage;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,7 +35,7 @@ enum StreamersTableStateEnum{
     Instantiated,
     Creating,
     Editing,
-    Error(TableError),
+    Error(InputError),
 }
 
 #[derive(Debug, Clone)]
@@ -224,7 +212,7 @@ impl StreamersTable{
         
         let main_content = match self.state{
             StreamersTableStateEnum::Error(message) => {
-                Banner::new(message).overlay(col)
+                InputErrorBanner::overlay(message,col, StreamersTableMessage::CloseBanner)
             },
             _ => {
                 Container::new(col).center_y().center_x().into()
@@ -307,28 +295,28 @@ impl StreamersTable{
        users
     }
 
-    fn check_modifications(&self, id: Option<String>, opt: CudEnum) -> Result<(Option<String>, String, String), TableError> {
+    fn check_modifications(&self, id: Option<String>, opt: CudEnum) -> Result<(Option<String>, String, String), InputError> {
         let streamers = self.get_users();
         let new_name;
         let new_ip;
         match opt{
             CudEnum::Create => {
                 if &self.name_input == "" {
-                    return Err(TableError::NotAName);
+                    return Err(InputError::NotAName);
                 }else {
                     new_name = self.name_input.clone().to_ascii_lowercase();
                 }
                 match &self.ip_input.parse::<Ipv4Addr>(){
                     Err(_) => {
-                        return Err(TableError::NotAnIp);
+                        return Err(InputError::NotAnIp);
                     },
                     Ok(_) => {new_ip = self.ip_input.clone();}
                 }
                 for record in streamers.iter(){
                         if new_name == record.1.0 {
-                            return Err(TableError::NameAlreadyPresent);
+                            return Err(InputError::NameAlreadyPresent);
                         }else if new_ip == record.1.1{
-                            return Err(TableError::IpAlreadyPresent);
+                            return Err(InputError::IpAlreadyPresent);
                         }
                 }
             },
@@ -336,22 +324,22 @@ impl StreamersTable{
                 let streamer;
                 match streamers.get(id.as_ref().unwrap()){
                     Some(s) => streamer = s,
-                    None => return Err(TableError::IdNotFound)
+                    None => return Err(InputError::IdNotFound)
                 };
                 new_name = if &self.name_input == "" {streamer.0.clone()} else {self.name_input.clone().to_ascii_lowercase()};
                 new_ip =  if &self.ip_input == "" {streamer.1.clone()} else {self.ip_input.clone()};
                 for record in streamers.iter(){
                     if record.0 != id.as_ref().unwrap() {
                         if new_name == record.1.0 {
-                            return Err(TableError::NameAlreadyPresent);
+                            return Err(InputError::NameAlreadyPresent);
                         }else if new_ip == record.1.1{
-                            return Err(TableError::IpAlreadyPresent);
+                            return Err(InputError::IpAlreadyPresent);
                         }
                     }
                 }
                 match new_ip.parse::<Ipv4Addr>(){
                     Err(_) => {
-                        return Err(TableError::NotAnIp);
+                        return Err(InputError::NotAnIp);
                     }
                     _ => {}
                 }
@@ -359,7 +347,7 @@ impl StreamersTable{
             CudEnum::Delete => {
                 match streamers.get(id.as_ref().unwrap()){
                     Some(_) => { new_name = "".to_string(); new_ip = "".to_string();},
-                    None => return Err(TableError::IdNotFound)
+                    None => return Err(InputError::IdNotFound)
                 };
             },
         }
@@ -419,83 +407,3 @@ impl Into<Box<dyn iced::widget::container::StyleSheet<Style=Theme>>> for RecordS
 }
 
 
-
-struct Banner{
-    message: TableError
-}
-
-impl Banner{
-    fn new(message: TableError) -> Self {
-        Self{
-            message
-        }
-    }
-
-    fn overlay(
-        self,
-        content: Column<'_, StreamersTableMessage>,
-    ) -> Element<'_, StreamersTableMessage> {
-        let message;
-        match self.message{
-            TableError::NameAlreadyPresent => {
-                message = "Name is already present";
-            },
-            TableError::IpAlreadyPresent => {
-                message = "Ip is already present";
-            },
-            TableError::IdNotFound => {
-                message = "Id not found";
-            },
-            TableError::NotAName => {
-                message = "Not a name";
-            },
-            TableError::NotAnIp => {
-                message = "Not an IP address";
-            }
-        }
-        let overlay = Container::new(
-            Row::new()
-                .spacing(10)
-                .padding(10)
-                .align_items(Alignment::Center)
-                .push(Text::new(message).size(16))
-                .push(
-                    Button::new("Close")
-                        .on_press(StreamersTableMessage::CloseBanner)
-                        .padding(5),
-                ),
-        )
-        .width(Length::Fill)
-        .padding(10)
-        .style(theme::Container::Custom(BannerStyle.into()));
-
-        // Stack the banner on top of the content
-        let content = Column::new()
-            .push(overlay)
-            .push(Container::new(content).padding(20));
-
-        Element::from(Container::new(content))
-        
-    }
-}
-
-#[derive(Debug, Clone, Default)]
-struct BannerStyle;
-
-impl iced::widget::container::StyleSheet for BannerStyle {
-    type Style = Theme;
-
-    fn appearance(&self, _style: &Self::Style) -> iced::widget::container::Appearance {
-        iced::widget::container::Appearance {
-            background: Some(Color::from_rgb(0.9, 0.1, 0.1).into()), // Red background
-            border_radius: 5.0.into(),
-            text_color: Some(Color::WHITE),
-            ..Default::default()
-        }
-    }
-}
-impl Into<Box<dyn iced::widget::container::StyleSheet<Style=Theme>>> for BannerStyle {
-    fn into(self) -> Box<dyn iced::widget::container::StyleSheet<Style=Theme>> {
-        Box::new(BannerStyle)
-    }
-}

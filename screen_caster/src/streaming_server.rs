@@ -55,11 +55,11 @@ impl StreamingServer {
             cvar.notify_all(); // Notifica tutti i thread
         }
 
-        let mut command = "".to_string();
+        let command ;
 
         if share_mode == ShareMode::CropArea {
             let exe_path = utils::get_project_src_path();
-            let mut file_path = "".to_string();
+            let file_path;
             file_path = exe_path.display().to_string() + r"/config/crop.txt";
 
             let mut file = File::open(file_path).expect("Impossibile aprire il file");

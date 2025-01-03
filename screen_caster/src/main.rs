@@ -12,6 +12,7 @@ mod gif_widget;
 mod streaming_client;
 mod streaming_server;
 mod streamers_table;
+mod error_banner;
 
 fn main() {
     // Flag per fermare il thread

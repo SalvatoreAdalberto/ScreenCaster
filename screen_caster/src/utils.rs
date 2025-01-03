@@ -8,8 +8,6 @@ use if_addrs::{IfAddr, get_if_addrs};
 use ipnet::Ipv4Net;
 use ipnetwork::IpNetwork;
 
-use std::net::Ipv4Addr;
-
 use std::io;
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
@@ -18,12 +16,21 @@ use std::path::{Path, PathBuf};
 use crate::streaming_server::CropArea;
 use dirs::download_dir;
 use screenshots::Screen;
+use crate::error_banner::InputError;
 
 pub const HOTKEYS_CONFIG_PATH : &str = "../config/hotkeys.txt";
 pub const SAVE_DIRECTORY_CONFIG_PATH : &str = "../config/save_path.txt";
 
-pub fn is_ip_in_lan(ip_to_check: &str) -> bool {
-    let target_ip: Ipv4Addr = ip_to_check.parse().expect("Indirizzo IP non valido");
+pub fn is_ip_in_lan(ip_to_check: &str) -> Result<(), InputError> {
+    let target_ip;
+    match ip_to_check.parse(){
+        Ok(ip) => {
+            target_ip = ip;
+        },
+        Err(_) => {
+            return Err(InputError::NotAnIp);
+        }
+    }
 
     #[cfg(not(target_os = "windows"))]
     {
@@ -35,7 +42,7 @@ pub fn is_ip_in_lan(ip_to_check: &str) -> bool {
                 // Controlla solo gli indirizzi IPv4
                 if let IpNetwork::V4(network) = ip {
                     if network.contains(target_ip) {
-                        return true; // L'indirizzo appartiene alla subnet
+                        return Ok(()); // L'indirizzo appartiene alla subnet
                     }
                 }
             }
@@ -51,7 +58,7 @@ pub fn is_ip_in_lan(ip_to_check: &str) -> bool {
             }
             Err(e) => {
                 eprintln!("[ERROR] Impossibile ottenere le interfacce di rete: {}", e);
-                return false;
+                return Err(InputError::NotInSameLan);
             }
         };
 
@@ -78,7 +85,7 @@ pub fn is_ip_in_lan(ip_to_check: &str) -> bool {
                         "[DEBUG] L'indirizzo IP {} appartiene alla subnet di {} con netmask {}.",
                         target_ip, local_ip, netmask
                     );
-                    return true;
+                    return Ok(());
                 } else {
                     println!(
                         "[DEBUG] L'indirizzo IP {} NON appartiene alla subnet di {} con netmask {}.",
@@ -116,7 +123,7 @@ pub fn is_ip_in_lan(ip_to_check: &str) -> bool {
                             );
 
                             if subnet.contains(&target_ip) {
-                                return true;
+                                return Ok(());
                             }
                         }
                     }
@@ -124,7 +131,7 @@ pub fn is_ip_in_lan(ip_to_check: &str) -> bool {
             }
         }
     }
-    false
+    Err(InputError::NotInSameLan)
 }
 
 #[cfg(target_os = "windows")]

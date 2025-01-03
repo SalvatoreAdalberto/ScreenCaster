@@ -1,3 +1,4 @@
+use iced::alignment::Vertical;
 use iced::widget::{Button, Column, Container, PickList, Row, Scrollable, Space, Svg, Text, TextInput};
 use iced::{Alignment, Element, Length, Application, Command, Settings, Theme, Subscription, alignment::Horizontal};
 use crate::utils;
@@ -9,7 +10,15 @@ use std::process::{Command as Command2, Output, Stdio};
 use std::collections::HashMap;
 use crate::streaming_client::{StreamingClient, VideoPlayerMessage};
 use crate::streamers_table::{StreamersTable, StreamersTableMessage};
+use crate::error_banner::{Banner, InputError};
 use native_dialog::FileDialog;
+
+struct ConnectInputErrorBanner;
+
+impl <'a>Banner<'a> for ConnectInputErrorBanner{
+    type ExtMessage = Message;
+}
+
 
 // Definiamo i messaggi dell'applicazione
 #[derive(Debug, Clone)]
@@ -46,7 +55,8 @@ pub enum Message {
     DirectorySelected(Option<String>),
     SaveDirectory,
     GoToListStreamers,
-    StreamersTableMessage(StreamersTableMessage)
+    StreamersTableMessage(StreamersTableMessage),
+    CloseBanner
 }
 
 // Stati possibili dell'applicazione
@@ -62,6 +72,7 @@ pub enum AppStateEnum {
     Watching,
     SelectScreen,
     ChangeListStreamers,
+    ConnectInputError(InputError),
 }
 
 // Struttura dell'applicazione
@@ -170,7 +181,7 @@ impl Application for ScreenCaster {
             Message::ScreenSelected => {
                 if app_state.share_mode == ShareMode::CropArea {
                     let exe_path = utils::get_project_src_path();
-                    let mut real_path = "".to_string();
+                    let real_path ;
                     real_path = exe_path.display().to_string() + r"/overlay_crop/target/release/overlay_crop";
                     Command2::new(real_path)
                         .arg(app_state.screen_index.to_string())
@@ -215,34 +226,39 @@ impl Application for ScreenCaster {
 
             }
             Message::TryConnect => {
-                if self.ip_address.is_empty(){
-                    let matching = self.streamers_map.iter()
-                        .filter(|(key, ip)| key.to_lowercase().starts_with(&self.input_state) || ip.starts_with(&self.input_state))
-                        .map(|(_, ip)| ip.clone())
-                        .collect::<Vec<String>>();
-
-                    match matching.len() {
-                        0 => {
-                            self.ip_address = self.input_state.clone();
-                            let _ = Command::perform(async {}, |_| Message::NoMatchFound);
+                    if !self.input_state.is_empty() {
+                        let matching = self.streamers_map.iter()
+                            .filter(|(key, ip)| key.to_lowercase().starts_with(&self.input_state) || ip.starts_with(&self.input_state))
+                            .map(|(_, ip)| ip.clone())
+                            .collect::<Vec<String>>();
+                        match matching.len() {
+                            0 | 1 => {
+                                match matching.len() {
+                                    0 => self.ip_address = self.input_state.clone(),
+                                    1 =>  self.ip_address = matching[0].clone(),
+                                    _ => {},
+                                }
+                                match utils::is_ip_in_lan(&self.ip_address) {
+                                    Ok(_) => { 
+                                        self.state = AppStateEnum::Watching;
+                                        self.streaming_client = Some(StreamingClient::new(self.ip_address.clone(), self.selected_directory.clone()));
+                                        println!("Connesso a {}", self.ip_address);
+                                        return Command::perform(async {}, |_| Message::Connecting)},
+                                    Err(e) => {
+                                        self.state = AppStateEnum::ConnectInputError(e);
+                                    }
+                                }
+                            },
+                            _ => {
+                                self.state = AppStateEnum::ConnectInputError(InputError::MultipleMatches);
+                            }
                         }
-                        1 => {
-                            self.ip_address = matching[0].clone();
-                        }
-                        _ => {
-                            return Command::perform(async {}, |_| Message::MultipleMatches);
-                        }
+                    }else{
+                        self.state = AppStateEnum::ConnectInputError(InputError::NoValue);
                     }
-
-
-                }
-                return if utils::is_ip_in_lan(&self.ip_address) {
-                    self.state = AppStateEnum::Watching;
-                    self.streaming_client = Some(StreamingClient::new(self.ip_address.clone(), self.selected_directory.clone()));
-                    Command::perform(async {}, |_| Message::Connecting)
-                } else {
-                    Command::perform(async {}, |_| Message::NotInLan)
-                }
+            }
+            Message::CloseBanner => {
+                self.state = AppStateEnum::Connect;
             }
             Message::VideoPlayerMessage(message) => {
                 if let Some(sc) = &mut self.streaming_client {
@@ -357,7 +373,7 @@ impl Application for ScreenCaster {
                  if !app_state.check_annotation_open() {
 
                     let exe_path = utils::get_project_src_path();
-                    let mut real_path = "".to_string();
+                    let real_path ;
                     real_path = exe_path.display().to_string() + r"/annotation_tool/target/release/annotation_tool";
                     let child = Some(Command2::new(real_path)
                         .arg(app_state.screen_index.to_string())
@@ -371,7 +387,7 @@ impl Application for ScreenCaster {
             }
             Message::SelectCropArea => {
                 let exe_path = utils::get_project_src_path();
-                let mut real_path = "".to_string();
+                let real_path ;
                 real_path = exe_path.display().to_string() + r"/overlay_crop/target/release/overlay_crop";
                 Command2::new(real_path)
                     .arg(app_state.screen_index.to_string())
@@ -455,7 +471,7 @@ impl Application for ScreenCaster {
             AppStateEnum::Home => self.view_home(),
             AppStateEnum::StartSharing => self.view_start_sharing(),
             AppStateEnum::IsSharing => self.view_is_sharing(),
-            AppStateEnum::Connect => self.view_connect(),
+            AppStateEnum::Connect | AppStateEnum::ConnectInputError(_) => self.view_connect(),
             AppStateEnum::ChangeHotKeys => self.view_change_hotkey(),
             AppStateEnum::Watching => self.view_watching(),
             AppStateEnum::SelectScreen => self.view_select_screen(),
@@ -736,13 +752,19 @@ impl ScreenCaster {
                             .on_press(Message::GoBackHome),
                     )
             );
-
-        Container::new(content)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .center_x()
-            .center_y()
-            .into()
+        
+         match self.state {
+            AppStateEnum::ConnectInputError(error) => Container::new(ConnectInputErrorBanner::overlay(error, content, Message::CloseBanner))
+                .center_y()
+                .into(),
+            _ =>  Container::new(content)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .center_x()
+                .center_y()
+                .into()
+        }
+        
     }
 
     fn view_watching(&self) -> Element<Message> {
@@ -991,8 +1013,8 @@ impl ScreenCaster {
 }
 
 pub fn run_gui(app_state: Arc<Mutex<AppState>>, manager: Arc<Mutex<GlobalHotKeyManager>>, id1: Arc<Mutex<u32>>, id2: Arc<Mutex<u32>>, id3: Arc<Mutex<u32>>, id4: Arc<Mutex<u32>>, hotkey_record: HotKey, hotkey_stop: HotKey, hotkey_clear: HotKey, hotkey_close: HotKey) {
-    let mut app_state_clone = app_state.clone();
-    let mut settings = Settings::with_flags((app_state, manager, id1, id2, id3, id4, hotkey_record, hotkey_stop, hotkey_clear, hotkey_close));
+    let app_state_clone = app_state.clone();
+    let settings = Settings::with_flags((app_state, manager, id1, id2, id3, id4, hotkey_record, hotkey_stop, hotkey_clear, hotkey_close));
     ScreenCaster::run(settings).expect("Failed to start application");
     app_state_clone.lock().unwrap().stop();
 }

@@ -10,7 +10,7 @@ use std::thread;
 use std::sync::mpsc::{self, Receiver, Sender};
 use crossbeam_channel::{bounded, Sender as CrossbeamSender, Receiver as CrossbeamReceiver};
 
-use std::process::{ChildStdin};
+use std::process::ChildStdin;
 use std::io::{Read, Write, BufWriter};
 use std::io::ErrorKind;
 use std::path::PathBuf;
@@ -446,9 +446,9 @@ impl StreamingClient {
                 }
                 None
             }
-            VideoPlayerMessage::GifPlayerMessage(GifPlayerMessage) => {
+            VideoPlayerMessage::GifPlayerMessage(gif_player_message) => {
                 if let  Some(gif) = self.gif_widget.as_mut(){
-                    let _ = gif.update(GifPlayerMessage);
+                    let _ = gif.update(gif_player_message);
                 }
                 None
             }
