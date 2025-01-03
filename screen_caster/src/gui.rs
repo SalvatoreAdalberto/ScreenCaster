@@ -1,3 +1,4 @@
+use ffmpeg_sidecar::command;
 use iced::widget::{Button, Column, Container, Row, Text, TextInput, Scrollable, PickList, Space};
 use iced::{Alignment, Element, Length, Application, Command, Settings, Theme, Subscription, alignment::Horizontal};
 use crate::utils;
@@ -202,10 +203,14 @@ impl Application for ScreenCaster {
             }
             Message::InputChanged(value) => {
                 self.input_state = (&value).to_string();
+                if self.input_state.is_empty() {
+                    self.streamers_suggestions.clear();
+                    return Command::none();
+                }
                 self.streamers_suggestions = self
                     .streamers_map
                     .iter()
-                    .filter(|(key, ip)| key.to_lowercase().starts_with(&value) || ip.starts_with(&value))
+                    .filter(|(key, ip)| key.starts_with(&self.input_state.to_ascii_lowercase()) || ip.starts_with(&self.input_state.to_ascii_lowercase()))
                     .map(|(key, ip)| (key.clone(), ip.clone()))
                     .collect();
                 self.ip_address.clear();
@@ -427,7 +432,12 @@ impl Application for ScreenCaster {
                 self.state = AppStateEnum::ChangeListStreamers;
             }
             Message::StreamersTableMessage(message) => {
-                self.streamers_table.update(message);
+                if let StreamersTableMessage::Exit = message {
+                    self.streamers_table.update(message);
+                    return Command::perform(async {}, |_| Message::GoToViewScreen);
+                } else {
+                    self.streamers_table.update(message); 
+                }
             }
         }
 
@@ -922,21 +932,8 @@ impl ScreenCaster {
     }
 
     fn view_modify_list_streamers(&self) -> Element<Message> {
-        let content = Column::new()
-            .push(Container::new(self.streamers_table.view_streamers_table().map(Message::StreamersTableMessage))
-                .height(Length::FillPortion(5)).center_y()
-            )    
-            .push(
-                Container::new(
-                Button::new(Text::new("Back").horizontal_alignment(Horizontal::Center))
-                                .padding(10)
-                                .width(Length::Fixed(150.0))
-                                .on_press(Message::GoToViewScreen)
-                ).height(Length::FillPortion(2)).center_y()
-            ).width(Length::Fill).align_items(Alignment::Center);
         
-        
-        Container::new(content)
+        Container::new(self.streamers_table.view_streamers_table().map(Message::StreamersTableMessage))
             .center_x()
             .center_y()
             .height(Length::Fill)

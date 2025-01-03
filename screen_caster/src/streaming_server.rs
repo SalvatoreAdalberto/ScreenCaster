@@ -45,6 +45,7 @@ impl StreamingServer {
         }
     }
 
+    
     pub fn start(&mut self, screen_index: usize, share_mode: ShareMode) {
 
         {
@@ -144,28 +145,32 @@ impl StreamingServer {
 
                 let mut list_guard = list_tx_clients_clone.lock().unwrap();
                 // Controlla se il messaggio è "START"
-                if message.trim() == "START" && !list_guard.contains_key(&target_address.clone()){
+                if message.trim() == "START"{
+                    if !list_guard.contains_key(&target_address.clone()){
 
-                    let send_socket = listener_socket.clone();
-                    let (tx, rx) = channel::<Vec<u8>>();
+                        let send_socket = listener_socket.clone();
+                        let (tx, rx) = channel::<Vec<u8>>();
 
-                    list_guard.insert(target_address.clone(), Client{ tx, });
-                    listener_socket.send_to(b"OK", &target_address).unwrap();
-                    
-                    println!("Client connesso: {}", target_address);
-                    //Spawna un thread per inviare i dati al client
-                    thread::spawn(move || {
-                        loop {
-                            // Ricevi i dati dal canale e inviali; quando il client viene rimosso dalla lista, il tx viene droppato e il thread termina
-                            match rx.recv(){
-                                Ok(data) => {send_socket.send_to(&data, &target_address).unwrap();},
-                                Err(e) => {
-                                    eprintln!("Errore durante la ricezione dei dati: {}", e);
-                                    break;
+                        list_guard.insert(target_address.clone(), Client{ tx, });
+                        listener_socket.send_to(b"OK", &target_address).unwrap();
+                        
+                        println!("Client connesso: {}", target_address);
+                        //Spawna un thread per inviare i dati al client
+                        thread::spawn(move || {
+                            loop {
+                                // Ricevi i dati dal canale e inviali; quando il client viene rimosso dalla lista, il tx viene droppato e il thread termina
+                                match rx.recv(){
+                                    Ok(data) => {send_socket.send_to(&data, &target_address).unwrap();},
+                                    Err(e) => {
+                                        eprintln!("Errore durante la ricezione dei dati: {}", e);
+                                        break;
+                                    }
                                 }
                             }
-                        }
-                    });
+                        });
+                    }else{
+                        listener_socket.send_to(b"OK", &target_address).unwrap();
+                    }
                 }
                 if message.trim().starts_with("STOP"){
                     let message = message.split("\n").collect::<Vec<&str>>();

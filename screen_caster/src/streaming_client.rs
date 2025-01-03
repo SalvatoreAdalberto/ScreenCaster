@@ -273,33 +273,41 @@ impl StreamingClient {
     }
 
     fn on_exit(&mut self) {
-        let socket = Arc::new(UdpSocket::bind(format!("{}:3043", self.own_ip)).expect("Failed to bind socket"));
-        let mut buffer = [0; BUFFER_SIZE];
-        let address = self.target_address.clone();
-        let message = format!("STOP\n{}:3040", self.own_ip);
-        socket.set_read_timeout(Some(Duration::from_secs_f32(0.2))).expect("Failed to set read timeout");
-        let start = Instant::now();
-        println!("Asking to stop connection");
+        match UdpSocket::bind(format!("{}:3043", self.own_ip)){
+            Ok(s) => {
+                let socket = Arc::new(s);
 
-        loop{
-            if start.elapsed() > Duration::from_secs(1) {
-                eprintln!("Connection timeout");
-                break;
-            }
-            let _ = socket.send_to(&message.as_bytes(), &address);
-            match socket.recv(&mut buffer) {
-                Ok(number_of_bytes) => {
-                    let data = &buffer[..number_of_bytes];
-                    if data == "OK".as_bytes() {
+                let mut buffer = [0; BUFFER_SIZE];
+                let address = self.target_address.clone();
+                let message = format!("STOP\n{}:3040", self.own_ip);
+                socket.set_read_timeout(Some(Duration::from_secs_f32(0.2))).expect("Failed to set read timeout");
+                let start = Instant::now();
+                println!("Asking to stop connection");
+
+                loop{
+                    if start.elapsed() > Duration::from_secs(1) {
+                        eprintln!("Connection timeout");
                         break;
                     }
+                    let _ = socket.send_to(&message.as_bytes(), &address);
+                    match socket.recv(&mut buffer) {
+                        Ok(number_of_bytes) => {
+                            let data = &buffer[..number_of_bytes];
+                            if data == "OK".as_bytes() {
+                                break;
+                            }
+                        }
+                        Err(err) => {
+                            eprintln!("Failed to receive data: {}", err);
+                        }
+                    }
                 }
-                Err(err) => {
-                    eprintln!("Failed to receive data: {}", err);
-                }
+                drop(socket);
+            },
+            Err(_) => {
+                eprintln!("Failed to bind socket");
             }
         }
-        drop(socket);
     }
 
     fn start_record(&mut self) {

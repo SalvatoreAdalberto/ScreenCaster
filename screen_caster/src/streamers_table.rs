@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use iced::{Element, Alignment, Color, Theme, Length, theme};
+use iced::{Element, Alignment, Color, Theme, Length, theme, alignment::Horizontal};
 use iced::widget::{Row, Text, TextInput, Button, Column, Container, Svg};
 use rusqlite::{params, Connection};
 use uuid::Uuid;
@@ -58,6 +58,7 @@ pub enum StreamersTableMessage{
     CloseBanner,
     Modify(String),
     ToggleAdd,
+    Exit,
 }
 
 pub const STREAMERS_LIST_PATH : &str = "../config/streamers_list.db";
@@ -125,19 +126,30 @@ impl StreamersTable{
             StreamersTableMessage::ToggleAdd => {
                 match self.state{
                     StreamersTableStateEnum::Instantiated  =>  self.state = StreamersTableStateEnum::Creating,
-                    StreamersTableStateEnum::Creating => self.state = StreamersTableStateEnum::Instantiated,
+                    StreamersTableStateEnum::Creating => {
+                        self.ip_input = "".to_string();
+                        self.name_input = "".to_string();
+                        self.state = StreamersTableStateEnum::Instantiated
+                    },
                     _ => {}
                 }
             },
             StreamersTableMessage::Modify(id) => {
                 match self.state{
                     StreamersTableStateEnum::Instantiated  => {
+                        self.ip_input = "".to_string();
+                        self.name_input = "".to_string();
                         self.state = StreamersTableStateEnum::Editing;
                         self.editing_id = Some(id);
                     },
                     _ => {}
                 }
             },
+            StreamersTableMessage::Exit => {
+                self.ip_input = "".to_string();
+                self.name_input = "".to_string();
+                self.state = StreamersTableStateEnum::Instantiated;
+            }
         }
     }
 
@@ -209,14 +221,24 @@ impl StreamersTable{
                 col = col.push(add_button);
             }
         }
-        match self.state{
+        
+        let main_content = match self.state{
             StreamersTableStateEnum::Error(message) => {
                 Banner::new(message).overlay(col)
             },
             _ => {
                 Container::new(col).center_y().center_x().into()
             }
-        }
+        };
+        let main_fit_content = Container::new(main_content).height(Length::FillPortion(5)).center_y();
+        let  exit_button = 
+            Container::new(
+            Button::new(Text::new("Back").horizontal_alignment(Horizontal::Center))
+                            .padding(10)
+                            .width(Length::Fixed(150.0))
+                            .on_press(StreamersTableMessage::Exit)
+            ).height(Length::FillPortion(2)).center_y();
+        Container::new(Column::new().push(main_fit_content).push(exit_button).width(Length::Fill).align_items(Alignment::Center)).into()
         
     }
 
@@ -294,7 +316,7 @@ impl StreamersTable{
                 if &self.name_input == "" {
                     return Err(TableError::NotAName);
                 }else {
-                    new_name = self.name_input.clone();
+                    new_name = self.name_input.clone().to_ascii_lowercase();
                 }
                 match &self.ip_input.parse::<Ipv4Addr>(){
                     Err(_) => {
@@ -316,7 +338,7 @@ impl StreamersTable{
                     Some(s) => streamer = s,
                     None => return Err(TableError::IdNotFound)
                 };
-                new_name = if &self.name_input == "" {streamer.0.clone()} else {self.name_input.clone()};
+                new_name = if &self.name_input == "" {streamer.0.clone()} else {self.name_input.clone().to_ascii_lowercase()};
                 new_ip =  if &self.ip_input == "" {streamer.1.clone()} else {self.ip_input.clone()};
                 for record in streamers.iter(){
                     if record.0 != id.as_ref().unwrap() {
@@ -353,7 +375,7 @@ fn add_record(conn: &Connection, name: String, ip: String){
     let id = Uuid::new_v4();
     let _ = conn.execute(
             "INSERT INTO streamers (id, name, ip) VALUES (?1, ?2, ?3)",
-            params![&id.to_string(), &name, &ip],
+            params![&id.to_string(), &name.to_ascii_lowercase(), &ip],
         );
 }
 
