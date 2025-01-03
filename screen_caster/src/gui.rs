@@ -673,11 +673,18 @@ impl ScreenCaster {
                         column.push(
                             Button::new(
                                 Row::new()
-                                    .spacing(350)
-                                    .align_items(Alignment::Center)
-                                    .push(Text::new(suggestion))
-                                    .push(Text::new(ip))
-                            )
+                                        .push(
+                                        Column::new()
+                                                .width(Length::Fixed(250.0))
+                                                .align_items(Alignment::Start)
+                                                .push(Text::new(suggestion))
+                                        )
+                                        .push(
+                                        Column::new()
+                                                .width(Length::Fixed(250.0))
+                                                .align_items(Alignment::End)
+                                                .push(Text::new(ip))
+                            ))
                                 .on_press(Message::SuggestionClicked((suggestion.clone(), ip.clone())))
                                 .padding(8)
                                 .width(Length::Fixed(500.0)),
@@ -829,7 +836,7 @@ impl ScreenCaster {
                     .spacing(20)
                     .align_items(Alignment::Center)
                     .push(
-                        Text::new("Inserisci la key per iniziare la registrazione:").size(20)
+                        Text::new("Inserisci la key per fermare la registrazione:").size(20)
                     )
                     .push(
                         TextInput::new(
