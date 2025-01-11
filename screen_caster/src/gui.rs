@@ -1,4 +1,3 @@
-use iced::alignment::Vertical;
 use iced::widget::{Button, Column, Container, PickList, Row, Scrollable, Space, Svg, Text, TextInput};
 use iced::{Alignment, Element, Length, Application, Command, Settings, Theme, Subscription, alignment::Horizontal};
 use crate::utils;
@@ -6,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use global_hotkey::GlobalHotKeyManager;
 use global_hotkey::hotkey::{HotKey, Modifiers};
 use crate::hotkeys::{AppState, parse_key_code, HotkeyMessage};
-use std::process::{Command as Command2, Output, Stdio};
+use std::process::{Command as Command2, Stdio};
 use std::collections::HashMap;
 use crate::streaming_client::{StreamingClient, VideoPlayerMessage};
 use crate::streamers_table::{StreamersTable, StreamersTableMessage};
@@ -42,9 +41,6 @@ pub enum Message {
     SelectCropArea,
     TryConnect,
     Connecting,
-    NoMatchFound,
-    MultipleMatches,
-    NotInLan,
     VideoPlayerMessage(VideoPlayerMessage),
     StopConnection,
     PickList(usize),
@@ -94,7 +90,6 @@ pub struct ScreenCaster {
     stop_shortcut: String,         // Shortcut per fermare la registrazione
     clear_shortcut: String,
     close_shortcut: String,
-    client: Option<Output>,
     streamers_table: StreamersTable,
     streamers_map: HashMap<String,String>,
     streamers_suggestions: Vec<(String, String)>,
@@ -147,7 +142,6 @@ impl Application for ScreenCaster {
                 stop_shortcut: stop,
                 clear_shortcut: clear,
                 close_shortcut: close,
-                client: None,
                 streamers_table: StreamersTable::new(),
                 streamers_map: HashMap::new(),
                 streamers_suggestions: Vec::new(),
@@ -194,7 +188,7 @@ impl Application for ScreenCaster {
             Message::StartCasting => {
                 app_state.start(); // Avvia la registrazione
                 self.state = AppStateEnum::IsSharing;
-                println!("Screen casting avviato!");
+                
             }
             Message::StopCasting => {
                 app_state.stop(); // Ferma la registrazione
@@ -242,7 +236,7 @@ impl Application for ScreenCaster {
                                     Ok(_) => { 
                                         self.state = AppStateEnum::Watching;
                                         self.streaming_client = Some(StreamingClient::new(self.ip_address.clone(), self.selected_directory.clone()));
-                                        println!("Connesso a {}", self.ip_address);
+                                        
                                         return Command::perform(async {}, |_| Message::Connecting)},
                                     Err(e) => {
                                         self.state = AppStateEnum::ConnectInputError(e);
@@ -277,15 +271,6 @@ impl Application for ScreenCaster {
                 if let Some(sc) = &mut self.streaming_client {
                     sc.update(VideoPlayerMessage::Connect);
                 }
-            }
-            Message::NoMatchFound => {
-                println!("Nessuna corrispondenza trovata");
-            }
-            Message::MultipleMatches => {
-                println!("Trovate più corrispondenze");
-            }
-            Message::NotInLan => {
-                println!("L'indirizzo IP non è nella LAN");
             }
             Message::GoToChangeHotKeys => {
                 self.state = AppStateEnum::ChangeHotKeys
@@ -341,11 +326,11 @@ impl Application for ScreenCaster {
 
                 utils::save_hotkeys(&self.start_shortcut, &self.stop_shortcut, &self.clear_shortcut, &self.close_shortcut).unwrap();
 
-                println!("Hotkeys modificate!");
-                println!("Start: {}", self.start_shortcut);
-                println!("Stop: {}", self.stop_shortcut);
-                println!("Clear: {}", self.clear_shortcut);
-                println!("Close: {}", self.close_shortcut);
+                
+                
+                
+                
+                
 
                 self.state = AppStateEnum::Settings;
             }
@@ -382,7 +367,7 @@ impl Application for ScreenCaster {
                         .expect("Non è stato possibile avviare l'annotation tool"));
                     app_state.update_stdin(child.unwrap().stdin.unwrap());
                 } else {
-                    println!("Annotation tool già aperto");
+                    
                 }
             }
             Message::SelectCropArea => {
@@ -447,7 +432,7 @@ impl Application for ScreenCaster {
             Message::SaveDirectory => {
                 let dir = self.selected_directory.clone();
                 utils::save_directory(&dir).unwrap();
-                println!("Directory salvata: {}", dir);
+                
                 self.state = AppStateEnum::Settings;
             }
             Message::GoToListStreamers => {

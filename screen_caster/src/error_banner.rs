@@ -1,8 +1,9 @@
-use core::error;
-
 use thiserror::Error;
-use iced::{Element, Length, Alignment, Color, Theme, theme, alignment::Vertical};
+use iced::{Element, Length, Alignment, Color, Theme, theme};
 use iced::widget::{ Button, Column, Container, Row, Text};
+
+///This module is used to define a custom error enum for the input validation both for connection
+/// attempts and for streamers_table CRUD operations. The error enum is used to display a banner in the GUI. 
 
 #[derive(Debug, Error, Clone, Copy)]
 pub enum InputError {
