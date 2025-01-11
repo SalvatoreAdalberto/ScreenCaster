@@ -13,12 +13,17 @@ use druid::kurbo::Line;
 
 const STDIN_INPUT: Selector<String> = Selector::new("stdin.input");
 
+/// Represents the current state of the annotation tool.
+/// The tool can either be in `Drawing` mode, where the user is actively drawing,
+/// or in `Idle` mode, where no drawing is taking place.
 #[derive(PartialEq, Debug, Clone, Data)]
 pub enum OverlayState {
     Drawing,
     Idle,
 }
 
+/// Represents the different types of shapes that can be drawn by the annotation tool.
+/// Each variant corresponds to a specific shape the user can create.
 #[derive(Clone, PartialEq, Debug, Data)]
 pub enum ShapeType {
     Rectangle,
@@ -27,6 +32,8 @@ pub enum ShapeType {
     Highlight,
 }
 
+/// Represents different drawable shapes in the annotation tool, each with its associated data.
+/// Each variant stores the specific parameters needed to define the corresponding shape.
 #[derive(Clone, Data, PartialEq)]
 pub enum Shapes {
     Rectangle(Rectangle),
@@ -35,6 +42,8 @@ pub enum Shapes {
     Highlight(Rectangle),
 }
 
+/// Represents a rectangle shape in the annotation tool.
+/// Defined by its start and end coordinates, as well as its color.
 #[derive(Clone, Debug, Data, PartialEq)]
 pub struct Rectangle {
     start_x: f64,
@@ -44,6 +53,8 @@ pub struct Rectangle {
     color: Color,
 }
 
+/// Represents a circular shape in the annotation tool.
+/// Defined by its center coordinates, radius, and color.
 #[derive(Clone, Debug, Data, PartialEq)]
 pub struct Circle {
     center_x: f64,
@@ -52,20 +63,23 @@ pub struct Circle {
     color: Color,
 }
 
+/// Represents the main application state for the annotation tool.
+/// Contains information about the current state of the tool, drawn shapes, 
+/// and user-selected options such as shape type and color.
 #[derive(Clone, Data, Lens)]
 pub struct AppData {
-    #[data(same_fn = "PartialEq::eq")]
-    handled_monitors: Vec<usize>,
     overlay_state: OverlayState,
     start_point: Option<Point>,
     end_point: Option<Point>,
     #[data(same_fn = "PartialEq::eq")]
     shapes: Vec<Shapes>,
-    selected_shape: ShapeType, // Currently selected shape type
-    selected_color: Color, // Currently selected color
-    current_background_color: Color,
+    selected_shape: ShapeType,
+    selected_color: Color,
 }
 
+/// A widget that provides an interactive overlay for drawing shapes
+/// such as rectangles, circles, lines, and highlights.
+/// It handles user input events and manages the drawing process.
 pub struct DrawingOverlay;
 
 impl DrawingOverlay {
@@ -75,8 +89,11 @@ impl DrawingOverlay {
 }
 
 impl Widget<AppData> for DrawingOverlay {
+    /// Handles various user input events (commands, mouse events) 
+    /// to update the application state and trigger redraws.
     fn event(&mut self, ctx: &mut EventCtx, event: &Event, data: &mut AppData, _env: &Env) {
         match event {
+            // Handles custom input commands from stdin to clear the shapes.
             Event::Command(cmd) if cmd.is(STDIN_INPUT) => {
                 if let Some(input) = cmd.get(STDIN_INPUT) {
                     if input == "clear" {
@@ -85,23 +102,25 @@ impl Widget<AppData> for DrawingOverlay {
                     }
                 }
             }
+            // Handles mouse down event: begins a new shape drawing.
             Event::MouseDown(mouse) => {
                 // Start tracking the rectangle
                 data.start_point = Some(mouse.pos);
                 data.overlay_state = OverlayState::Drawing;
                 ctx.request_paint();
             }
+            // Handles mouse move event: updates the shape endpoint during drawing.
             Event::MouseMove(mouse) => {
-                // Update the endpoint while dragging
                 if data.overlay_state == OverlayState::Drawing {
                     data.end_point = Some(mouse.pos);
                     ctx.request_paint();
                 }
             }
+            // Handles mouse up event: finalizes the shape and adds it to the shapes list.
             Event::MouseUp(_) => {
-                // Complete the drawing and add the shape to the shapes vector
                 if let (Some(start), Some(end)) = (data.start_point, data.end_point) {
                     match data.selected_shape {
+                        // Create and store the appropriate shape based on the selected type.
                         ShapeType::Rectangle => {
                             let rect = Rectangle {
                                 start_x: start.x,
@@ -146,6 +165,7 @@ impl Widget<AppData> for DrawingOverlay {
                         }
                     }
                 }
+                // Reset the overlay state and clear temporary points.
                 data.overlay_state = OverlayState::Idle;
                 data.start_point = None;
                 data.end_point = None;
@@ -163,6 +183,8 @@ impl Widget<AppData> for DrawingOverlay {
         _env: &Env,
     ) {}
 
+    /// Handles updates to the application state.
+    /// Triggers a repaint when the overlay state or shapes list changes.
     fn update(
         &mut self,
         ctx: &mut UpdateCtx,
@@ -188,12 +210,13 @@ impl Widget<AppData> for DrawingOverlay {
         bc.max()
     }
 
+    /// Handles the drawing of the overlay and shapes on the screen.
     fn paint(&mut self, ctx: &mut druid::PaintCtx, data: &AppData, _env: &Env) {
-        
+        // Fill the background with a semi-transparent white color.
         let background_rect = ctx.size().to_rect();
         ctx.fill(background_rect, &Color::rgba8(0xff, 0xff, 0xff, 0x4));
     
-        // Draw existing shapes
+        // Draw all existing shapes.
         for shape in &data.shapes {
             match shape {
                 Shapes::Rectangle(rect) => {
@@ -229,7 +252,7 @@ impl Widget<AppData> for DrawingOverlay {
             }
         }
 
-        // Draw current selection outline
+        // Draw an outline for the current shape being drawn, if any.
         if let (Some(start), Some(end)) = (data.start_point, data.end_point) {
             let outline_color = &data.selected_color;
             let border_width = 2.0;
@@ -272,8 +295,9 @@ pub fn main() -> anyhow::Result<()> {
 
     let (width, height, x, y) = compute_window_size(index)?;
 
+    // Configure the main window of the application.
     let main_window = WindowDesc::new(build_root_widget())
-        .title("Draw Shapes")
+        .title("Annotation Tool")
         .set_always_on_top(true)
         .transparent(true)
         .show_titlebar(false)
@@ -281,21 +305,21 @@ pub fn main() -> anyhow::Result<()> {
         .set_position((x, y));
 
     let initial_data = AppData {
-        handled_monitors: vec![0],
         overlay_state: OverlayState::Idle,
         start_point: None,
         end_point: None,
         shapes: Vec::new(),
         selected_shape: ShapeType::Rectangle,
         selected_color: Color::BLACK,
-        current_background_color: Color::rgba8(0xff, 0xff, 0xff, 0x00),
     };
 
-
+    // Create a launcher to start the application with the main window.
     let launcher = AppLauncher::with_window(main_window);
+
+    // Get an external event handle for sending events from outside the main thread.
     let event_sink = launcher.get_external_handle();
 
-    // Avvia un thread separato per leggere da stdin
+    // Start a separate thread to read commands from stdin.
     start_stdin_reader(event_sink);
 
     launcher
@@ -305,6 +329,7 @@ pub fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+// Function to start a separate thread for reading from stdin
 fn start_stdin_reader(event_sink: ExtEventSink) {
     thread::spawn(move || {
         let stdin = std::io::stdin();
@@ -312,15 +337,15 @@ fn start_stdin_reader(event_sink: ExtEventSink) {
 
         loop {
             buffer.clear();
-            // Legge da stdin
+            // Read a line from stdin and store it in the buffer
             if stdin.read_line(&mut buffer).is_ok() {
                 let input = buffer.trim().to_string();
                 if input == "quit" {
-                    // Puoi inviare un comando specifico per chiudere l'applicazione
+                    // If input is "quit", send a command to quit the application
                     event_sink.submit_command(druid::commands::QUIT_APP, (), Target::Global).unwrap();
                     break;
                 } else {
-                    // Invia il comando al thread principale
+                    // Otherwise, send the input command to the main thread for processing.
                     event_sink.submit_command(STDIN_INPUT, input, Target::Global).unwrap();
                 }
             }
@@ -328,21 +353,22 @@ fn start_stdin_reader(event_sink: ExtEventSink) {
     });
 }
 
+/// Builds the main root widget for the application, containing the drawing overlay and control buttons.
 fn build_root_widget() -> impl Widget<AppData> {
-    let quit_button = buttons::quit_button();
+    let quit_button = buttons::quit_button(); // Button to quit the application
 
-    let clear_button = buttons::clear_button();
+    let clear_button = buttons::clear_button(); // Button to clear all shapes
 
-    let undo_button = buttons::undo_button();
+    let undo_button = buttons::undo_button(); // Button to undo the last shape
 
-    let shape_selector = buttons::choose_shape_button();
+    let shape_selector = buttons::choose_shape_button(); // Button to choose the shape type
 
-    let color_selector = buttons::choose_color_button();
+    let color_selector = buttons::choose_color_button(); // Button to choose the color
 
     let controls = Flex::row()
-        .with_flex_spacer(1.0) // Spazio flessibile a sinistra
+        .with_flex_spacer(1.0) 
         .with_child(quit_button)
-        .with_spacer(25.0) // Spazio fisso tra i pulsanti
+        .with_spacer(25.0) 
         .with_child(clear_button)
         .with_spacer(25.0)
         .with_child(undo_button)
@@ -350,8 +376,8 @@ fn build_root_widget() -> impl Widget<AppData> {
         .with_child(shape_selector)
         .with_spacer(25.0)
         .with_child(color_selector)
-        .with_flex_spacer(1.0) // Spazio flessibile a destra
-        .main_axis_alignment(MainAxisAlignment::Center) // Centra i widget lungo l'asse principale
+        .with_flex_spacer(1.0) 
+        .main_axis_alignment(MainAxisAlignment::Center) 
         .must_fill_main_axis(true)
         .padding(10.0)
         .background(Color::rgba8(31,34,37,255));
@@ -361,6 +387,10 @@ fn build_root_widget() -> impl Widget<AppData> {
         .with_flex_child(DrawingOverlay::new(), 10.0)
 }
 
+/// Computes the window size based on the index of the monitor to display the application on.
+/// Returns the width, height, top-left x-coordinate, and top-left y-coordinate of the window.
+/// The index is 1-based, where 1 corresponds to the primary monitor.
+/// The index is the first command-line argument passed to the application.
 pub fn compute_window_size(index: usize) -> anyhow::Result<(f64, f64, f64, f64)> {
     let screen = Screen::get_monitors().to_vec()[index-1].clone();
     let width = screen.virtual_work_rect().width();

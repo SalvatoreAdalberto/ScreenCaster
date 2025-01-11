@@ -5,6 +5,9 @@ use druid::{Env, EventCtx, Event, Application};
 use std::str::FromStr;
 
 use crate::{AppData, ShapeType};
+
+/// Controller for the quit button
+/// When the button is clicked, the application will quit
 struct QuitButtonController;
 
 impl<W: Widget<AppData>> Controller<AppData, W> for QuitButtonController {
@@ -16,28 +19,28 @@ impl<W: Widget<AppData>> Controller<AppData, W> for QuitButtonController {
     }
 }
 
+/// Create a custom quit button
 pub fn quit_button() -> impl Widget<AppData> {
-    // Carica l'SVG
-    let svg_data = include_str!("../../assets/close_app.svg"); // Percorso al tuo SVG
+    let svg_data = include_str!("../../assets/close_app.svg");
     let svg = Svg::new(SvgData::from_str(svg_data).unwrap())
-        .fix_size(25.0, 25.0); // Dimensione del contenuto SVG
+        .fix_size(25.0, 25.0); 
 
-    // Pittura per il background del bottone
     let button_painter = Painter::new(|ctx, _data: &AppData, _env| {
         let bounds = ctx.size().to_rect();
         ctx.fill(bounds, &Color::rgb8(51, 89, 218));
     });
 
-    // Contenitore per il bottone
     Flex::column()
         .with_child(svg)
         .align_vertical(UnitPoint::CENTER)
         .align_horizontal(UnitPoint::CENTER)
-        .background(button_painter) // Sfondo colorato
-        .fix_size(30.0, 30.0) // Dimensioni del bottone
-        .controller(QuitButtonController) // Aggiungi comportamento al click
+        .background(button_painter) 
+        .fix_size(30.0, 30.0) 
+        .controller(QuitButtonController)
 }
 
+/// Controller for the clear button
+/// When the button is clicked, the shapes will be cleared
 struct ClearButtonController;
 
 impl<W: Widget<AppData>> Controller<AppData, W> for ClearButtonController {
@@ -50,28 +53,28 @@ impl<W: Widget<AppData>> Controller<AppData, W> for ClearButtonController {
     }
 }
 
+/// Create a custom clear button
 pub fn clear_button() -> impl Widget<AppData> {
-    // Carica l'SVG
-    let svg_data = include_str!("../../assets/clear.svg"); // Percorso al tuo SVG
+    let svg_data = include_str!("../../assets/clear.svg");
     let svg = Svg::new(SvgData::from_str(svg_data).unwrap())
-        .fix_size(25.0, 25.0); // Dimensione del contenuto SVG
+        .fix_size(25.0, 25.0); 
 
-    // Pittura per il background del bottone
     let button_painter = Painter::new(|ctx, _data: &AppData, _env| {
         let bounds = ctx.size().to_rect();
         ctx.fill(bounds, &Color::rgb8(51, 89, 218));
     });
 
-    // Contenitore per il bottone
     Flex::column()
         .with_child(svg)
         .align_vertical(UnitPoint::CENTER)
         .align_horizontal(UnitPoint::CENTER)
-        .background(button_painter) // Sfondo colorato
-        .fix_size(30.0, 30.0) // Dimensioni del bottone
-        .controller(ClearButtonController) // Aggiungi comportamento al click
+        .background(button_painter) 
+        .fix_size(30.0, 30.0) 
+        .controller(ClearButtonController) 
 }
 
+/// Controller for the undo button
+/// When the button is clicked, the last drawn shape will be removed
 struct UndoButtonController;
 
 impl<W: Widget<AppData>> Controller<AppData, W> for UndoButtonController {
@@ -84,28 +87,29 @@ impl<W: Widget<AppData>> Controller<AppData, W> for UndoButtonController {
     }
 }
 
+/// Create a custom undo button
 pub fn undo_button() -> impl Widget<AppData> {
-    // Carica l'SVG
-    let svg_data = include_str!("../../assets/undo.svg"); // Percorso al tuo SVG
+    let svg_data = include_str!("../../assets/undo.svg"); 
     let svg = Svg::new(SvgData::from_str(svg_data).unwrap())
-        .fix_size(25.0, 25.0); // Dimensione del contenuto SVG
+        .fix_size(25.0, 25.0); 
 
-    // Pittura per il background del bottone
     let button_painter = Painter::new(|ctx, _data: &AppData, _env| {
         let bounds = ctx.size().to_rect();
         ctx.fill(bounds, &Color::rgb8(51, 89, 218));
     });
 
-    // Contenitore per il bottone
     Flex::column()
         .with_child(svg)
         .align_vertical(UnitPoint::CENTER)
         .align_horizontal(UnitPoint::CENTER)
-        .background(button_painter) // Sfondo colorato
-        .fix_size(30.0, 30.0) // Dimensioni del bottone
-        .controller(UndoButtonController) // Aggiungi comportamento al click
+        .background(button_painter) 
+        .fix_size(30.0, 30.0) 
+        .controller(UndoButtonController)
 }
 
+/// Controller for the shape selection button.
+/// This button triggers the display of a list of available shapes.
+/// When a shape is selected from the list, the app's data is updated.
 struct ChooseShapeController;
 
 impl<W: Widget<AppData>> Controller<AppData, W> for ChooseShapeController {
@@ -132,29 +136,29 @@ impl<W: Widget<AppData>> Controller<AppData, W> for ChooseShapeController {
     }
 }
 
+/// Create a custom shape list button
 pub fn choose_shape_button() -> impl Widget<AppData> {
-    // Carica l'SVG
-    let svg_data = include_str!("../../assets/shapes.svg"); // Percorso al tuo SVG
+    let svg_data = include_str!("../../assets/shapes.svg"); 
     let svg = Svg::new(SvgData::from_str(svg_data).unwrap())
-        .fix_size(25.0, 25.0); // Dimensione del contenuto SVG
+        .fix_size(25.0, 25.0); 
 
-    // Pittura per il background del bottone
     let button_painter = Painter::new(|ctx, _data: &AppData, _env| {
         let bounds = ctx.size().to_rect();
         ctx.fill(bounds, &Color::rgb8(51, 89, 218));
     });
 
-    // Contenitore per il bottone
     Flex::column()
         .with_child(svg)
         .align_vertical(UnitPoint::CENTER)
         .align_horizontal(UnitPoint::CENTER)
-        .background(button_painter) // Sfondo colorato
-        .fix_size(30.0, 30.0) // Dimensioni del bottone
-        .controller(ChooseShapeController) // Aggiungi comportamento al click
+        .background(button_painter) 
+        .fix_size(30.0, 30.0) 
+        .controller(ChooseShapeController) 
 }
 
-
+/// Controller for the color selection button.
+/// This button triggers the display of a list of available colors.
+/// When a color is selected from the list, the app's data is updated.
 struct ChooseColorController;
 
 impl<W: Widget<AppData>> Controller<AppData, W> for ChooseColorController {
@@ -184,24 +188,22 @@ impl<W: Widget<AppData>> Controller<AppData, W> for ChooseColorController {
     }
 }
 
+/// Create a custom color list button
 pub fn choose_color_button() -> impl Widget<AppData> {
-    // Carica l'SVG
-    let svg_data = include_str!("../../assets/colors.svg"); // Percorso al tuo SVG
+    let svg_data = include_str!("../../assets/colors.svg");
     let svg = Svg::new(SvgData::from_str(svg_data).unwrap())
-        .fix_size(25.0, 25.0); // Dimensione del contenuto SVG
+        .fix_size(25.0, 25.0); 
 
-    // Pittura per il background del bottone
     let button_painter = Painter::new(|ctx, _data: &AppData, _env| {
         let bounds = ctx.size().to_rect();
         ctx.fill(bounds, &Color::rgb8(51, 89, 218));
     });
 
-    // Contenitore per il bottone
     Flex::column()
         .with_child(svg)
         .align_vertical(UnitPoint::CENTER)
         .align_horizontal(UnitPoint::CENTER)
-        .background(button_painter) // Sfondo colorato
-        .fix_size(30.0, 30.0) // Dimensioni del bottone
-        .controller(ChooseColorController) // Aggiungi comportamento al click
+        .background(button_painter) 
+        .fix_size(30.0, 30.0) 
+        .controller(ChooseColorController)
 }
