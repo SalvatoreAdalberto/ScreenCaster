@@ -3,9 +3,13 @@ use iced::{Element, Alignment, Color, Theme, Length, theme, alignment::Horizonta
 use iced::widget::{Row, Text, TextInput, Button, Column, Container, Svg};
 use rusqlite::{params, Connection};
 use uuid::Uuid;
-use thiserror::Error;
 use std::net::Ipv4Addr;
 use crate::error_banner::{Banner, InputError};
+
+///This module contains the StreamersTable struct and its 
+/// implementation. The StreamersTable is used to manage the persistence of the list of streamers
+/// through a ligth database.
+
 
 struct InputErrorBanner;
 
@@ -20,6 +24,9 @@ pub enum CudEnum{
     Delete
 }
 
+/// The struct contains the database connection, the name and ip input fields, the state of the table
+/// and the state before an error occurred. The struct also contains the editing_id field which is used
+/// to keep track of the id of the record being edited.
 pub struct StreamersTable{
     db_connection: Connection,
     name_input: String,
@@ -30,6 +37,7 @@ pub struct StreamersTable{
 
 }
 
+/// The StreamersTableStateEnum is used to keep track of the state of the StreamersTable struct.
 #[derive(Debug, Clone, Copy)]
 enum StreamersTableStateEnum{
     Instantiated,
@@ -38,6 +46,8 @@ enum StreamersTableStateEnum{
     Error(InputError),
 }
 
+/// The StreamersTableMessage enum is used to send messages to the StreamersTable struct 
+/// exploiting the update function of the main gui, which will call the update method of StreamersTable.
 #[derive(Debug, Clone)]
 pub enum StreamersTableMessage{
     InputName(String),
@@ -141,6 +151,7 @@ impl StreamersTable{
         }
     }
 
+    /// The view_streamers_table method is used to create the view of the StreamersTable struct in the GUI, this function will be called by view method of Application GUI.
     pub fn view_streamers_table(&self) -> Element<StreamersTableMessage>{
         let header: Element<StreamersTableMessage> = Container::<StreamersTableMessage>::new(
     Row::new()
@@ -230,6 +241,10 @@ impl StreamersTable{
         
     }
 
+    /// The view_record method is used to create the view of a record in the StreamersTable struct in the GUI.
+    /// This method will be called by view_streamers_table method.
+    /// The record view will contain the name and ip of the streamer and two buttons, one for editing the record and one for deleting it.
+    /// If the record is being edited, the record view will contain two TextInput fields for the name and ip of the streamer and a button to confirm the modifications.
     fn view_record(&self, record: (String, (String, String))) -> Element<StreamersTableMessage>{
         let row: Row<'_, StreamersTableMessage, _>  ;
         if self.editing_id.is_some() && &record.0 == self.editing_id.as_ref().unwrap(){
@@ -281,6 +296,7 @@ impl StreamersTable{
         
     }
     
+    /// The get_users method is used to retrieve the list of streamers from the database.
     pub fn get_users(&self) -> HashMap<String, (String, String)>{
         let mut stmt = self.db_connection.prepare("SELECT id, name, ip FROM streamers").unwrap();
         let user_iter = stmt.query_map([], |row| {
@@ -295,6 +311,9 @@ impl StreamersTable{
        users
     }
 
+    /// The check_modifications method is used to check the modifications made to the record for any of the CUD operations.
+    /// The method will return an InputError if the name is empty, the ip is not a valid ip, the name is already present in the list of streamers or the ip is already present in the list of streamers.
+    /// The method will return the id, the new name and the new ip if the modifications are valid.
     fn check_modifications(&self, id: Option<String>, opt: CudEnum) -> Result<(Option<String>, String, String), InputError> {
         let streamers = self.get_users();
         let new_name;
@@ -358,7 +377,7 @@ impl StreamersTable{
 }
 
 
-
+/// The add_record method is used to add a record to the database.
 fn add_record(conn: &Connection, name: String, ip: String){
     let id = Uuid::new_v4();
     let _ = conn.execute(
@@ -367,6 +386,7 @@ fn add_record(conn: &Connection, name: String, ip: String){
         );
 }
 
+/// The delete_record method is used to delete a record from the database.
 fn delete_record(conn: &Connection, id: String) {
     match conn.execute(
         "DELETE FROM streamers WHERE id = ?1",
@@ -377,6 +397,7 @@ fn delete_record(conn: &Connection, id: String) {
     }
 }
 
+/// The modify_record method is used to modify a record in the database.
 fn modify_record(conn: &Connection, name: String, ip: String, id: String) {
     let _ = conn.execute(
         "UPDATE streamers SET name = ?1, ip = ?2 WHERE id = ?3",

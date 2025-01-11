@@ -6,6 +6,56 @@ use ffmpeg_sidecar::event::OutputVideoFrame;
 use iced::widget::image::Handle;
 use image::{RgbImage, RgbaImage, DynamicImage};
 
+
+/* 
+This module is used to process raw format frames coming from ffmpeg process and convert them into 
+Iced Handle, in order to be displayed. The FrameProcessor concurrently processes frames using multiple workers.
+Each worker process a different frame and waits its turn to deliver the processed image, in such a way to mantain the
+relative order of the frames.
+
+EXAMPLE OF THE FRAME PROCESSOR ARCHITECTURE, 3 WORKERS
+
+                              |
+                              V
++---------------------------------------------------------------+
+|                         Dispatcher (D)                        |
+|                                                               |
+|                                                               |
++---------------------------------------------------------------+
+        |                     |                     |
+        v                     v                     v
++-----------------+   +-----------------+   +-----------------+
+|   Channel       |   |   Channel       |   |   Channel       |
+|    W1           |   |    W2           |   |    W3           |
+|                 |   |                 |   |                 |
++-----------------+   +-----------------+   +-----------------+
+        |                     |                     |
+        v                     v                     v
+  +------------+         +------------+        +------------+
+  |  Worker 1  |         |  Worker 2  |        |  Worker 3  |
+  |     W1     |         |     W2     |        |     W3     |
+  +------------+         +------------+        +------------+
+        |                     |                     |
+        v                     v                     v
+    +------------------------------------------------------+         
+    |                    Shared Channel                    |         
+    |                                                      |         
+    +------------------------------------------------------+         
+                             |
+                             v
+                    +-------------------+
+                    |   Aggregator (A)  |
+                    +-------------------+
+                             |
+                             v
+                        
+*/
+
+
+
+/// The FrameDispatcher is responsible for receiving frames from the ffmpeg and 
+/// dispatching them to the FrameProcessorWorkers.
+
 pub struct FrameDispatcher{
     n_workers: usize,
     receiver_frame: Receiver<OutputVideoFrame>,
@@ -40,6 +90,10 @@ impl FrameDispatcher{
     
 }
 
+
+///The FrameAggregator is responsible for receiving processed images from the FrameProcessorWorkers 
+/// and sending them to the iced GUI. 
+/// It notifies the FrameProcessorWorkers when it is their turn to send the processed image, in order to receive them in order to be played.
 pub struct FrameAggregator{
     internal_rx_image: Option<CrossbeamReceiver<Handle>>,
     send_image: Sender<Handle>,
@@ -76,8 +130,6 @@ impl FrameAggregator{
                     self.cv.notify_all();
                 }
                 Err(e) => {
-                    eprintln!("Error sending processed image: {}", e);
-                    eprintln!("TERMINATING ALL THREADS!");
                     drop(internal_rx_image);
                     self.terminate_sender.send(true).unwrap();
                     while let Ok(_) = self.terminate_sender.send(true){
@@ -86,8 +138,6 @@ impl FrameAggregator{
                         drop(sending_turn_guard);
                         self.cv.notify_all();
                     }
-                    println!("AGGREGATOR DID HIS JOB NOW WAITING");
-                    
                     break;
                 }
             } 
@@ -101,6 +151,8 @@ impl FrameAggregator{
     }
 }
 
+///The FrameProcessorWorkers are responsible for processing the frames and sending the processed
+/// images to the FrameAggregator.
 struct FrameProcessorWorker{
     thread_handle: JoinHandle<()>,
 }
@@ -118,26 +170,22 @@ impl FrameProcessorWorker{
                     handle = Handle::from_pixels(frame.width as u32, frame.height as u32, rgba_image.to_vec());
                     
                     if let Ok(true) = terminate_receiver.try_recv(){
-                        println!("thread{} exit 1", id);
                         break;
                     }
                     let mut sending_turn_guard: std::sync::MutexGuard<'_, usize> = sending_turn.lock().unwrap();
                     while *sending_turn_guard != id {
                         sending_turn_guard = condvar.wait(sending_turn_guard).unwrap();
                         if let Ok(true) = terminate_receiver.try_recv(){
-                            println!("thread{} exit 3", id);
                             break 'main ;
                         }
                     }
                     match send_image.send(handle){
                         Ok(_) => {},
                         Err(_) => {
-                            println!("thread{} exit 4", id);
                             break;
                         },
                     }
                 }
-                println!("terminating thread-worker{}", id);
         });
         Self{
             thread_handle,
@@ -145,6 +193,8 @@ impl FrameProcessorWorker{
     }
 }
 
+///The FrameProcessorConstructor is a factory that creates all necessary structs for FrameProcessor to work:
+/// FramePRoccessorWorkers, FrameDispatcher and a FrameAggregator.
 pub struct FrameProcessorConstructor{
 }
 

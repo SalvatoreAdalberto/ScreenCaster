@@ -11,7 +11,7 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use crossbeam_channel::{bounded, Sender as CrossbeamSender, Receiver as CrossbeamReceiver};
 
 use std::process::ChildStdin;
-use std::io::{Read, Write, BufWriter};
+use std::io::{ Write, BufWriter};
 use std::io::ErrorKind;
 use std::path::PathBuf;
 use chrono::Local;
@@ -24,6 +24,10 @@ use iced::widget::{Button, image::Handle, image::Image, Text};
 
 const LOADING_IMG: &str = "—Pngtree—blue circular progress bar page_6476398.png";
 const BUFFER_SIZE: usize = 1024;
+
+/// This module manages the streaming client. It is responsible for managing the connection with the server, receiving the video stream and displaying it.
+/// It also manages the recording of the video stream.
+/// When a new connection is issued a new StreamingClient is created.
 
 #[derive(Debug, Clone)]
 pub enum VideoPlayerMessage {
@@ -100,6 +104,7 @@ impl StreamingClient {
         }
     }
 
+    /// This method receives the next frame from the the FrameProcessor 
     fn update_image(&mut self) -> Option<Handle>{
         if let Ok(image) = self.receiver_image.as_ref().unwrap().try_recv() {
             Some(image)
@@ -109,6 +114,9 @@ impl StreamingClient {
         }
     }
 
+    /// This method initiates the connection with the server
+    /// It sends a "START" message to the server and waits for a response.
+    /// If the server responds with "OK" it means that we are connected but stream is not yet available.
     fn start_connection(&mut self){
 
         let mut buffer = [0; BUFFER_SIZE];
@@ -150,6 +158,13 @@ impl StreamingClient {
         });
     }
     
+    /// This method manages the incoming packets from the server.
+    /// It creates a new thread for the socket manager and another thread for the playback.
+    /// The socket manager receives the packets from the server and sends them to the playback thread as soon as they are available.
+    /// The playback thread sends the packets to ffmpeg for decoding.
+    /// Then frames are sent to the FrameProcessor for processing.
+    /// Socket manager also dispatches the frames to the record thread if recording is active.
+    /// 
     fn manage_incoming_packets(&mut self){
         let mut buffer = [0; BUFFER_SIZE];
         //Define playback channels
@@ -239,17 +254,14 @@ impl StreamingClient {
 
                 drop(sender_frame);
                 stop_receiving.store(true, Ordering::Relaxed);
-                println!("Ending thread-externalSendFrame-2");
 
             });
             thread::spawn(move || {
                 dispatcher.execute();
-                println!("Ending thread-executeManager-3");
             });
             thread::spawn(move ||{
                 aggregator.activate();
                 aggregator.join_workers();
-                println!("Ending thread-activateManager-4");
             });
 
             while !stop_receiving_ffpmeg.load(Ordering::Relaxed) {
@@ -267,11 +279,10 @@ impl StreamingClient {
             }
             drop(rx_playback);
             writer.write_all(b"").unwrap();
-
-            println!("Ending thread-ffmpegStdinWriter-5");
         });
     }
 
+    /// This method sends a "STOP" message to the server to inform the server we are leaving.
     fn on_exit(&mut self) {
         match UdpSocket::bind(format!("{}:3043", self.own_ip)){
             Ok(s) => {
@@ -310,6 +321,7 @@ impl StreamingClient {
         }
     }
 
+    /// This method starts the recording of the video stream issuing a new ffmpeg command.
     fn start_record(&mut self) {
         let mut recording_guard = self.is_recording.as_ref().unwrap().lock().unwrap();
         if !*recording_guard && self.pid_record.is_none() {
@@ -330,19 +342,7 @@ impl StreamingClient {
 
             let stdin_mutex = Arc::new(Mutex::new(ffmpeg_command_record.take_stdin().unwrap()));
             let stdin_mutex_clone = stdin_mutex.clone();
-            let mut stderr = ffmpeg_command_record.take_stderr().unwrap();
-            thread::spawn(move || {
-                let mut buffer = [0;256];
-
-                loop{
-                    let n = stderr.read(&mut buffer).unwrap();
-                    if n == 0{
-                        break;
-                    }
-                    eprintln!("Record Process: {}", String::from_utf8_lossy(&buffer[..n]));
-                }
-
-            });
+            
             self.pid_record = Some(ffmpeg_command_record.as_inner().id() as i32);
             let rx_record_clone = self.rx_record.as_ref().unwrap().clone();
             thread::spawn( || {
@@ -354,6 +354,7 @@ impl StreamingClient {
         }
     }
 
+    /// This method feeds the record process with the incoming packets received by the socket manager thread.
     fn feed_record_raw(stdin: Arc<Mutex<ChildStdin>>, rx_record: CrossbeamReceiver<Vec<u8>>){
         loop {
             match rx_record.recv_timeout(Duration::from_secs(1)) {
@@ -381,6 +382,7 @@ impl StreamingClient {
         }
     }
 
+    /// This method stops the recording of the video stream.
     fn stop_record(&mut self){
         let mut recording_guard = self.is_recording.as_ref().unwrap().lock().unwrap();
         if *recording_guard && self.pid_record.is_some(){
@@ -432,6 +434,7 @@ impl StreamingClient {
                 self.state = StreamingClientStateEnum::Streaming;
                 None
             }
+            // This message is used to cleanup the resources and close the connection
             VideoPlayerMessage::Exit => {
                 let _ = self.tx_connection_status.send(VideoPlayerMessage::Exit);
                 if let Some(_) = self.pid_record {
@@ -440,12 +443,14 @@ impl StreamingClient {
                 self.on_exit();
                 None
             }
+            // This message is used to update the image displayed on the screen, it is sent by the subscription
             VideoPlayerMessage::NextFrame => {
                 if let Some(image) = self.update_image() {
                     self.current_frame = image;
                 }
                 None
             }
+            // This message is used to manage the gif widget
             VideoPlayerMessage::GifPlayerMessage(gif_player_message) => {
                 if let  Some(gif) = self.gif_widget.as_mut(){
                     let _ = gif.update(gif_player_message);
@@ -464,6 +469,7 @@ impl StreamingClient {
         }
     }
 
+    /// This method returns the view of the video player
     pub fn view_video(&self) -> Element<VideoPlayerMessage>{
         match self.state{
             StreamingClientStateEnum::Streaming => {
