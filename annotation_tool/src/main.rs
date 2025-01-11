@@ -397,5 +397,12 @@ pub fn compute_window_size(index: usize) -> anyhow::Result<(f64, f64, f64, f64)>
     let height = screen.virtual_work_rect().height();
     let top_x = screen.virtual_work_rect().x0;
     let top_y = screen.virtual_work_rect().y0;
+    #[cfg(target_os = "macos")] {
+        // On macOS, the height of the window is reduced by 20 pixels to account for the menu bar on secondary screens.
+        // On the primary screen, the height is not reduced since druid automatically accounts for the menu bar.
+        if index > 1 {
+            return Ok((width, height-20.0, top_x, top_y+20.0));
+        }
+    }
     Ok((width, height, top_x, top_y))
 }
