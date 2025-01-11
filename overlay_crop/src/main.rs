@@ -10,24 +10,15 @@ use druid::piet::{Color, RenderContext};
 use druid::widget::Widget;
 use druid::{Data, Env, EventCtx, Point, Rect, Lens, Event, LifeCycle, LifeCycleCtx, UpdateCtx, LayoutCtx, BoxConstraints, Size};
 
-/// The data model for the app.
-/// 
-/// Overview:
-/// - This struct defines a rectangle using two optional points.
-///
-/// Details:
-/// - The first point represents the top-left corner of the rectangle.
-/// - The second point represents the bottom-right corner of the rectangle.
-///
-/// Usage:
-/// - Both points are optional, allowing for flexibility in defining rectangles.
 
+/// Data structure to store the start and end points of the rectangle.
 #[derive(Clone, Data, Lens)]
 pub struct AppData {
     start_point: Option<Point>,
     end_point: Option<Point>,
 }
 
+/// Widget to draw a rectangle on the screen.
 pub struct DrawingOverlay;
 
 impl DrawingOverlay {
@@ -37,32 +28,38 @@ impl DrawingOverlay {
 }
 
 impl Widget<AppData> for DrawingOverlay {
+    /// Handles mouse events to draw the rectangle.
     fn event(&mut self, ctx: &mut EventCtx, event: &Event, data: &mut AppData, _env: &Env) {
         match event {
+            // When the mouse is pressed, store the start point.
             Event::MouseDown(mouse) => {
-                // Start tracking the rectangle
                 data.start_point = Some(mouse.pos);
                 ctx.request_paint();
             }
+            // When the mouse is moved, update the end point.
             Event::MouseMove(mouse) => {
-                // Update the endpoint
                 data.end_point = Some(mouse.pos);
                 ctx.request_paint();
             }
+            // When the mouse is released, complete the drawing, save the coordinates and close the application.
             Event::MouseUp(_) => {
-                // Complete the drawing and add the shape to the shapes vector
                 if let (Some(start), Some(end)) = (data.start_point, data.end_point) {
-                    let mut x = start;
-                    let mut y = end;
+                    #[cfg(target_os = "macos")]
+                    {
+                        let x = start;
+                        let y = end;
+                        let rect = Rect::from_points(x, y).trunc();
+                        let scale = ctx.scale();
+                        save_point(rect, scale);
+                    }
                     #[cfg(any(target_os = "windows", target_os = "linux"))]
                     {
-                        x = ctx.to_screen(start);
-                        y = ctx.to_screen(end);
+                        let x = ctx.to_screen(start);
+                        let y = ctx.to_screen(end);
+                        let rect = Rect::from_points(x, y).trunc();
+                        let scale = ctx.scale();
+                        save_point(rect, scale);
                     }
-
-                    let rect = Rect::from_points(x, y).trunc();
-                    let scale = ctx.scale();
-                    save_point(rect, scale);
                     ctx.submit_command(druid::commands::QUIT_APP);
                 }
                 ctx.request_paint();
@@ -100,9 +97,7 @@ impl Widget<AppData> for DrawingOverlay {
     }
 
     fn paint(&mut self, ctx: &mut druid::PaintCtx, data: &AppData, _env: &Env) {
-
-
-        // Draw current selection outline, ensuring transparency inside
+        // Draw current selection outline, ensuring transparency inside.
         if let (Some(start), Some(end)) = (data.start_point, data.end_point) {
 
             let rect = Rect::from_points(start, end);
@@ -113,6 +108,7 @@ impl Widget<AppData> for DrawingOverlay {
                 ctx.fill(surrounding_rect, &Color::rgba(0.0, 0.0, 0.0, 0.5));
             }
         }
+        // If the rectangle is not drawn, fill the entire screen with a semi-transparent color.
         else {
             let background_rect = ctx.size().to_rect();
             ctx.fill(background_rect, &Color::rgba(0.0, 0.0, 0.0, 0.5));
@@ -131,6 +127,7 @@ pub fn main() -> anyhow::Result<()> {
 
     let (width, height, x, y) = compute_window_size(index)?;
 
+    // Create the main window
     let main_window = WindowDesc::new(DrawingOverlay::new())
         .title(LocalizedString::new("Draw Shapes"))
         .set_always_on_top(true)
@@ -145,6 +142,7 @@ pub fn main() -> anyhow::Result<()> {
         end_point: None,
     };
 
+    // Launch the application with the main window
     AppLauncher::with_window(main_window)
         .launch(initial_data)
         .expect("Failed to launch application");
@@ -152,41 +150,36 @@ pub fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Calcola la dimensione della finestra in base al monitor specificato.
-
+/// Computes the window size based on the index of the monitor to display the application on.
+/// Returns the width, height, top-left x-coordinate, and top-left y-coordinate of the window.
+/// The index is 1-based, where 1 corresponds to the primary monitor.
+/// The index is the first command-line argument passed to the application.
 pub fn compute_window_size(index: usize) -> anyhow::Result<(f64, f64, f64, f64)> {
     let screens = druid::Screen::get_monitors();
-    println!("{:?}", screens);
     let width = screens.to_vec()[index-1].virtual_rect().width();
     let height = screens.to_vec()[index-1].virtual_rect().height();
     let top_x = screens.to_vec()[index-1].virtual_rect().x0;
     let top_y = screens.to_vec()[index-1].virtual_work_rect().y0;
-    Ok((width, height-0.5, top_x, top_y+0.5))
+    Ok((width, height, top_x, top_y))
 }
 
-/// Salva le coordinate del rettangolo in un file.
-/// Se il file esiste già, lo sovrascrive.
-/// Il file si trova nella cartella config del progetto.
-
+/// Save the coordinates of the rectangle to a file.
+/// The coordinates are saved in the format: x0,y0,width,height.
+/// The coordinates are scaled based on the screen DPI.
+/// The file is saved in the config directory of the project.
 fn save_point(rect: Rect, scale: Scale) {
-    // Save the coordinates of the rectangle in a file
-    println!("Rectangle: {:?}", rect);
-    println!("Scale factor: {:?}", scale);
     let x = rect.x0 * scale.x();
     let y = rect.y0 * scale.y();
     let width = rect.width() * scale.x();
     let height = rect.height() * scale.y();
     let data = format!("{},{},{},{}", x, y, width, height);
-    println!("{}", data);
     let mut path = get_project_src_path();
     path.push("config/crop.txt");
-    println!("{:?}", path);
     let mut file = fs::File::create(path).expect("Impossibile creare il file");
     file.write_all(data.as_bytes()).expect("Errore nella scrittura");
 }
 
-/// Restituisce il percorso del progetto.
-
+/// Get the path of the project source directory.
 pub fn get_project_src_path() -> PathBuf {
     let exe_path = env::current_exe().expect("Failed to get current executable path");
 
@@ -198,13 +191,14 @@ pub fn get_project_src_path() -> PathBuf {
     exe_dir.to_path_buf()
 }
 
-/// Calcola i rettangoli circostanti.
-/// Permette di disegnare un rettangolo trasparente su uno sfondo opaco.
-
+/// Compute the surrounding rectangles of the given rectangle.
+/// The surrounding rectangles are the rectangles that are not covered by the given rectangle.
+/// b is the given rectangle and a is the background rectangle.
+/// Allows to fill the background with a semi-transparent color except for the given rectangle.
 fn surrounding_rectangles(a: Rect, b: Rect) -> Vec<Rect> {
     let mut result = Vec::new();
 
-    // Calcola il rettangolo sopra B
+    // Compute the rectangle above B
     if b.y1 < a.y1 {
         result.push(Rect {
             x0: b.x0,
@@ -214,7 +208,7 @@ fn surrounding_rectangles(a: Rect, b: Rect) -> Vec<Rect> {
         });
     }
 
-    // Calcola il rettangolo sotto B
+    // Compute the rectangle below B
     if b.y0 > a.y0 {
         result.push(Rect {
             x0: b.x0,
@@ -224,7 +218,7 @@ fn surrounding_rectangles(a: Rect, b: Rect) -> Vec<Rect> {
         });
     }
 
-    // Calcola il rettangolo a sinistra di B
+    // Compute the rectangle to the left of B
     if b.x0 > a.x0 {
         result.push(Rect {
             x0: a.x0,
@@ -234,7 +228,7 @@ fn surrounding_rectangles(a: Rect, b: Rect) -> Vec<Rect> {
         });
     }
 
-    // Calcola il rettangolo a destra di B
+    // Compute the rectangle to the right of B
     if b.x1 < a.x1 {
         result.push(Rect {
             x0: b.x1,
