@@ -15,37 +15,36 @@ mod streamers_table;
 mod error_banner;
 
 fn main() {
-    // Flag per fermare il thread
+    // Flag to stop the hotkey thread
     let running = Arc::new(Mutex::new(true));
     let running_clone = Arc::clone(&running);
 
-    // Stato dell'applicazione
     let app_state = Arc::new(Mutex::new(AppState::new()));
     let app_state_clone = Arc::clone(&app_state);
 
+    // Hotkeys setup
     let (start, stop, clear, close) = utils::read_hotkeys().unwrap();
 
-    // Setup delle hotkey
     let manager = Arc::new(Mutex::new(GlobalHotKeyManager::new().unwrap()));
     #[cfg(target_os = "macos")]
-    let hotkey_record = HotKey::new(Some(Modifiers::SUPER), hotkeys::parse_key_code(&start).unwrap()); // Cmd + H
+    let hotkey_record = HotKey::new(Some(Modifiers::SUPER), hotkeys::parse_key_code(&start).unwrap());
     #[cfg(not(target_os = "macos"))]
-    let hotkey_record = HotKey::new(Some(Modifiers::CONTROL), hotkeys::parse_key_code(&start).unwrap()); // Ctrl + H per Windows/Linux
+    let hotkey_record = HotKey::new(Some(Modifiers::CONTROL), hotkeys::parse_key_code(&start).unwrap());
 
     #[cfg(target_os = "macos")]
-    let hotkey_stop = HotKey::new(Some(Modifiers::SUPER), hotkeys::parse_key_code(&stop).unwrap()); // Cmd + J
+    let hotkey_stop = HotKey::new(Some(Modifiers::SUPER), hotkeys::parse_key_code(&stop).unwrap());
     #[cfg(not(target_os = "macos"))]
-    let hotkey_stop = HotKey::new(Some(Modifiers::CONTROL), hotkeys::parse_key_code(&stop).unwrap()); // Ctrl + J per Windows/Linux
+    let hotkey_stop = HotKey::new(Some(Modifiers::CONTROL), hotkeys::parse_key_code(&stop).unwrap());
 
     #[cfg(target_os = "macos")]
-    let hotkey_clear = HotKey::new(Some(Modifiers::SUPER), hotkeys::parse_key_code(&clear).unwrap()); // Cmd + K
+    let hotkey_clear = HotKey::new(Some(Modifiers::SUPER), hotkeys::parse_key_code(&clear).unwrap()); 
     #[cfg(not(target_os = "macos"))]
-    let hotkey_clear = HotKey::new(Some(Modifiers::CONTROL), hotkeys::parse_key_code(&clear).unwrap()); // Ctrl + K per Windows/Linux
+    let hotkey_clear = HotKey::new(Some(Modifiers::CONTROL), hotkeys::parse_key_code(&clear).unwrap()); 
 
     #[cfg(target_os = "macos")]
-    let hotkey_close = HotKey::new(Some(Modifiers::SUPER), hotkeys::parse_key_code(&close).unwrap()); // Cmd + L
+    let hotkey_close = HotKey::new(Some(Modifiers::SUPER), hotkeys::parse_key_code(&close).unwrap()); 
     #[cfg(not(target_os = "macos"))]
-    let hotkey_close = HotKey::new(Some(Modifiers::CONTROL), hotkeys::parse_key_code(&close).unwrap()); // Ctrl + L per Windows/Linux
+    let hotkey_close = HotKey::new(Some(Modifiers::CONTROL), hotkeys::parse_key_code(&close).unwrap());
 
 
     let id1 = Arc::new(Mutex::new(hotkey_record.id()));
@@ -65,7 +64,7 @@ fn main() {
     let _ = m.register(hotkey_clear).unwrap();
     let _ = m.register(hotkey_close).unwrap();
 
-    // Avvio del thread per gli hotkey
+    // Start the hotkey thread
     let handle = thread::spawn(move || {
         #[cfg(target_os = "windows")]
         hotkeys::windows_event_loop(id1_clone, id2_clone, id3_clone, id4_clone, app_state_clone, running_clone);
@@ -78,10 +77,10 @@ fn main() {
     });
     drop(m);
 
-    // Avvio dell'interfaccia grafica
+    // Start the GUI
     gui::run_gui(app_state, manager.clone(), id1.clone(), id2.clone(), id3.clone(), id4.clone(), hotkey_record, hotkey_stop, hotkey_clear, hotkey_close);
 
-    // Quando la GUI termina, chiudiamo anche il thread degli hotkey
+    // Stop the hotkey thread when the GUI is closed
     *running.lock().unwrap() = false;
     handle.join().unwrap();
 }

@@ -21,6 +21,7 @@ use crate::error_banner::InputError;
 pub const HOTKEYS_CONFIG_PATH : &str = "../config/hotkeys.txt";
 pub const SAVE_DIRECTORY_CONFIG_PATH : &str = "../config/save_path.txt";
 
+// Check if the IP address is in the same LAN as the local machine
 pub fn is_ip_in_lan(ip_to_check: &str) -> Result<(), InputError> {
     let target_ip;
     match ip_to_check.parse(){
@@ -34,7 +35,6 @@ pub fn is_ip_in_lan(ip_to_check: &str) -> Result<(), InputError> {
 
     #[cfg(not(target_os = "windows"))]
     {
-        // Ottieni le interfacce di rete
         let interfaces = datalink::interfaces();
 
         for interface in interfaces {
@@ -49,58 +49,34 @@ pub fn is_ip_in_lan(ip_to_check: &str) -> Result<(), InputError> {
         }
     }
 
+    /// On Windows, this function uses a different implementation due to the peculiarities
+    /// in network configurations. Specifically, when connected to mobile hotspots, the
+    /// netmask is often reported as `255.255.255.255`, which typically indicates a point-to-point connection.
+    /// This function accounts for this problem.
     #[cfg(target_os = "windows")]
     {
         let interfaces = match get_if_addrs() {
             Ok(ifaces) => {
-                println!("[DEBUG] Interfacce di rete ottenute con successo.");
                 ifaces
             }
             Err(e) => {
-                eprintln!("[ERROR] Impossibile ottenere le interfacce di rete: {}", e);
                 return Err(InputError::NotInSameLan);
             }
         };
 
         for iface in interfaces {
-            println!("[DEBUG] Esaminando interfaccia: {}", iface.name);
-
             if let IfAddr::V4(if_v4) = iface.addr {
                 let local_ip = if_v4.ip;
                 let netmask = if_v4.netmask;
 
-                println!(
-                    "[DEBUG] Interfaccia {}: IP locale: {}, Netmask: {}",
-                    iface.name, local_ip, netmask
-                );
-
                 let network = calculate_subnet_range(local_ip, netmask);
-                println!(
-                    "[DEBUG] Subnet range calcolato: {} - {}",
-                    network.0, network.1
-                );
 
                 if network.0 <= target_ip && target_ip <= network.1 {
-                    println!(
-                        "[DEBUG] L'indirizzo IP {} appartiene alla subnet di {} con netmask {}.",
-                        target_ip, local_ip, netmask
-                    );
                     return Ok(());
-                } else {
-                    println!(
-                        "[DEBUG] L'indirizzo IP {} NON appartiene alla subnet di {} con netmask {}.",
-                        target_ip, local_ip, netmask
-                    );
-                }
-            } else {
-                println!(
-                    "[DEBUG] L'interfaccia {} non è un indirizzo IPv4, ignorato.",
-                    iface.name
-                );
+                } 
             }
         }
 
-        // Ottieni gli adattatori di rete
         let adapters = get_adapters().expect("Impossibile ottenere gli adattatori di rete");
 
         for adapter in adapters {
@@ -109,18 +85,10 @@ pub fn is_ip_in_lan(ip_to_check: &str) -> Result<(), InputError> {
                     std::net::IpAddr::V4(ip) => Some(ip),
                     _ => None,
                 }) {
-                    // Ottieni il gateway predefinito
                     if let Some(gateway) = adapter.gateways().into_iter().next() {
                         if let std::net::IpAddr::V4(gateway_ip) = gateway {
-                            println!("[DEBUG] Gateway: {}", gateway_ip);
-
-                            // Ricostruisci una subnet approssimativa
+                
                             let subnet = Ipv4Net::new(*gateway_ip, 24).expect("Subnet non valida");
-
-                            println!(
-                                "[DEBUG] Controllo se {} appartiene alla subnet {}",
-                                target_ip, subnet
-                            );
 
                             if subnet.contains(&target_ip) {
                                 return Ok(());
@@ -134,6 +102,7 @@ pub fn is_ip_in_lan(ip_to_check: &str) -> Result<(), InputError> {
     Err(InputError::NotInSameLan)
 }
 
+// Compute the range of IP addresses in the same subnet
 #[cfg(target_os = "windows")]
 fn calculate_subnet_range(ip: Ipv4Addr, netmask: Ipv4Addr) -> (Ipv4Addr, Ipv4Addr) {
     let ip_u32 = u32::from(ip);
@@ -145,7 +114,7 @@ fn calculate_subnet_range(ip: Ipv4Addr, netmask: Ipv4Addr) -> (Ipv4Addr, Ipv4Add
     (Ipv4Addr::from(network_start), Ipv4Addr::from(broadcast))
 }
 
-
+// Get the path of the project's source directory
 pub fn get_project_src_path() -> PathBuf {
     let exe_path = env::current_exe().expect("Failed to get current executable path");
     let mut exe_dir = exe_path.parent().expect("Failed to get parent directory");
@@ -157,6 +126,11 @@ pub fn get_project_src_path() -> PathBuf {
     exe_dir.to_path_buf()
 }
 
+/// Computes the window size based on the index of the monitor to display the application on.
+/// Returns the width, height, top-left x-coordinate, and top-left y-coordinate of the window.
+/// The index is 1-based, where 1 corresponds to the primary monitor.
+/// The index is the first command-line argument passed to the application.
+/// Used only on Windows and Linux for full-screen mode.
 #[cfg(not(target_os = "macos"))]
 pub fn compute_window_size(index: usize)-> anyhow::Result<(u32, u32, u32, u32)> {
     let screens = Screen::all().unwrap();
@@ -171,11 +145,13 @@ pub fn compute_window_size(index: usize)-> anyhow::Result<(u32, u32, u32, u32)> 
     Ok((width, height, top_x, top_y))
 }
 
+// Returns the number of screens connected to the system
 pub fn count_screens() -> usize {
     let screens = Screen::all().unwrap();
     screens.len()
 }
 
+// Return the correct FFmpeg command based on the operating system, screen index, and crop area
 pub fn get_ffmpeg_command(screen_index:usize, crop: Option<CropArea>) -> String {
 
     #[cfg(target_os = "macos")]
@@ -219,12 +195,13 @@ pub fn get_ffmpeg_command(screen_index:usize, crop: Option<CropArea>) -> String 
 
 }
 
-
+/// Read the hotkeys from the configuration file and return them as a tuple. 
+/// If the file is empty, use the default hotkeys.
 pub fn read_hotkeys()  -> io::Result<(String, String, String, String)> {
     let file = File::open(HOTKEYS_CONFIG_PATH)?;
     let start_reader = BufReader::new(&file);
 
-    // Read the first line of the file (savepath)
+    // Read the first line of the file (start)
     let start = match start_reader.lines().next() {
         Some(Ok(path)) => path,
         _ => "h".to_string(),
@@ -234,7 +211,7 @@ pub fn read_hotkeys()  -> io::Result<(String, String, String, String)> {
     let file = File::open(HOTKEYS_CONFIG_PATH)?;
     let stop_reader = BufReader::new(&file);
 
-    // Read the second line of the file (shortcut)
+    // Read the second line of the file (stop)
     let stop = match stop_reader.lines().nth(1) {
         Some(Ok(shortcut)) => shortcut,
         Some(Err(_err)) => {
@@ -249,7 +226,7 @@ pub fn read_hotkeys()  -> io::Result<(String, String, String, String)> {
     let file = File::open(HOTKEYS_CONFIG_PATH)?;
     let clear_reader = BufReader::new(&file);
 
-    // Read the second line of the file (shortcut)
+    // Read the third line of the file (clear)
     let clear = match clear_reader.lines().nth(2) {
         Some(Ok(shortcut)) => shortcut,
         Some(Err(_err)) => {
@@ -263,7 +240,7 @@ pub fn read_hotkeys()  -> io::Result<(String, String, String, String)> {
     let file = File::open(HOTKEYS_CONFIG_PATH)?;
     let close_reader = BufReader::new(&file);
 
-    // Read the second line of the file (shortcut)
+    // Read the fourth line of the file (end session)
     let close = match close_reader.lines().nth(3) {
         Some(Ok(shortcut)) => shortcut,
         Some(Err(_err)) => {
@@ -277,11 +254,14 @@ pub fn read_hotkeys()  -> io::Result<(String, String, String, String)> {
     Ok((start, stop, clear, close))
 }
 
+/// Save the hotkeys to the configuration file.
+/// The hotkeys are saved in the order: start, stop, clear, close.
+/// If the file does not exist, it is created.
+/// If the file already exists, its content is overwritten.
 pub fn save_hotkeys(key1: &str, key2: &str, key3: &str, key4: &str) -> io::Result<()> {
-    // Apri il file in modalità scrittura (truncando il contenuto)
     let mut file = File::create(HOTKEYS_CONFIG_PATH)?;
 
-    // Scrivi ogni stringa su una nuova riga
+    // Write the hotkeys to the file one for each line
     writeln!(file, "{}", key1)?;
     writeln!(file, "{}", key2)?;
     writeln!(file, "{}", key3)?;
@@ -290,6 +270,7 @@ pub fn save_hotkeys(key1: &str, key2: &str, key3: &str, key4: &str) -> io::Resul
     Ok(())
 }
 
+/// Get the save directory from the configuration file. If the file is empty, use the default save directory.
 pub fn get_save_directory() -> io::Result<String> {
     let default_save_directory = download_dir()
         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Could not locate the Downloads directory"))?
@@ -317,16 +298,18 @@ pub fn get_save_directory() -> io::Result<String> {
 
         // Check if the path is valid (e.g., exists or can be used)
         if Path::new(&savepath).is_absolute() {
-            println!("Save directory: {}", savepath);
             Ok(savepath)
         } else {
-            println!("Invalid save directory, using default: {}", default_save_directory);
             save_directory(&default_save_directory)?;
             Ok(default_save_directory)
         }
     }
 }
 
+/// Save the save directory to the configuration file.
+/// The directory is saved as an absolute path.
+/// If the file does not exist, it is created.
+/// If the file already exists, its content is overwritten.
 pub fn save_directory(new_directory: &str) -> io::Result<()> {
     if !Path::new(new_directory).is_absolute() {
         return Err(io::Error::new(
