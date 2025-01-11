@@ -15,18 +15,27 @@ use std::time::Duration;
 use crate::gui::ShareMode;
 use crate::utils;
 
+/// This module contains the StreamingServer struct and its implementation.
+/// The StreamingServer struct is responsible for starting and stopping the screen casting process.
+/// The StreamingServer is in charge of sending the screen casting data to the clients.
+/// The list of clients is updated dinamically when a new client connects or disconnects.
+/// When the server is stopped, the server will notify all the connected clients and terminate the threads.
+
 const BUFFER_SIZE: usize = 1024;
+
 struct Client{
     tx: std::sync::mpsc::Sender<Vec<u8>>,
 }
 
+// StreamingServer struct contains the handle to the ffmpeg process, the list of connected clients, the control variable and the threads.
 pub struct StreamingServer {
     handle: Option<Mutex<FfmpegChild>>,
     list_clients: Arc<Mutex<HashMap<String, Client>>>,
-    control: Arc<(Mutex<bool>, Condvar)>, // Aggiunta per controllare la terminazione
+    control: Arc<(Mutex<bool>, Condvar)>,
     threads: Vec<thread::JoinHandle<()>>,
 }
 
+// CropArea struct contains the width, height, x_offset and y_offset of the crop area.
 #[derive(Debug)]
 pub struct CropArea {
     pub width: u32,
@@ -45,18 +54,20 @@ impl StreamingServer {
         }
     }
 
-    
+    // Start the screen casting process. Also start a thread to listen for incoming connections and a thread to send the screen casting data to the clients.
     pub fn start(&mut self, screen_index: usize, share_mode: ShareMode) {
 
         {
+            // Reset the control variable
             let (lock, cvar) = &*self.control;
             let mut terminate = lock.lock().unwrap();
             *terminate = false;
-            cvar.notify_all(); // Notifica tutti i thread
+            cvar.notify_all();
         }
 
         let command ;
 
+        // Get the FFmpeg command to start the screen casting process based on the screen index and the share mode.
         if share_mode == ShareMode::CropArea {
             let exe_path = utils::get_project_src_path();
             let file_path;
@@ -68,10 +79,9 @@ impl StreamingServer {
 
             let fields: Vec<u32> = content
                 .split(',')
-                .map(|s| s.trim().parse::<f64>()) // Parse each field as f64
-                .map(|res| res.map(|num| num.round() as u32)) // Round to nearest integer and convert to u32
-                .collect::<Result<_, _>>().unwrap(); // Collect into Vec<u32>, propagating any errors
-            println!("{:?}", fields);
+                .map(|s| s.trim().parse::<f64>()) 
+                .map(|res| res.map(|num| num.round() as u32))
+                .collect::<Result<_, _>>().unwrap();
 
             let crop = CropArea {
                 width: fields[2],
@@ -79,7 +89,6 @@ impl StreamingServer {
                 x_offset: fields[0],
                 y_offset: fields[1],
             };
-
             command = utils::get_ffmpeg_command(screen_index, Some(crop));
 
         }
@@ -87,8 +96,7 @@ impl StreamingServer {
             command = utils::get_ffmpeg_command(screen_index, None);
         }
 
-        println!("{:?}", command);
-
+        // Get the local IP address
         let ip_address: String;
         match local_ip() {
             Ok(ip) => ip_address = ip.to_string(),
@@ -98,12 +106,13 @@ impl StreamingServer {
             },
         };
 
+        // Bind the socket to the local IP address and port 8080 to listen for incoming connections
         let socket = Arc::new(UdpSocket::bind(format!("{ip_address}:8080")).expect("Failed to bind socket"));  // Il client bind sulla porta 8080
         let listener_socket = socket.clone();
 
         let ffmpeg_command = command.split(" ").collect::<Vec<&str>>();
 
-        // Avvia il comando FFmpeg con ffmpeg-sidecar
+        // Start the FFmpeg process
         let mut ffmpeg = FfmpegCommand::new().args(&ffmpeg_command).spawn().expect("Failed to start FFmpeg");
         let mut reader = BufReader::new(ffmpeg.take_stdout().unwrap());
         let mut buffer: [u8; BUFFER_SIZE] = [0; BUFFER_SIZE];
@@ -113,12 +122,12 @@ impl StreamingServer {
         let control = Arc::clone(&self.control);
         let control_clone = Arc::clone(&self.control);
 
-        //Lista dei client connessi
+        // Clone the list of clients to be used in the listener thread
         let list_tx_clients_clone = Arc::clone(&self.list_clients);
 
         listener_socket.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
 
-        //LISTENER THREAD
+        // Start a thread to listen for incoming connections
         let h = thread::spawn(move || {
             let mut buffer = [0; BUFFER_SIZE];
             let (lock, cvar) = &*control;
@@ -126,11 +135,10 @@ impl StreamingServer {
             loop{
 
                 if *lock.lock().unwrap() {
-                    println!("Terminazione del listener socket.");
                     break;
                 }
 
-                // Ricevi il pacchetto dal client
+                // Receive the data from the client
                 let (bytes_received, client_address) = match listener_socket.recv_from(&mut buffer) {
                     Ok(res) => res,
                     Err(_) => {
@@ -139,12 +147,10 @@ impl StreamingServer {
                 };
 
                 let message = String::from_utf8_lossy(&buffer[..bytes_received]);
-                println!("Ricevuto: '{}' da {}", message, client_address);
                 let target_address = format!("{}:{}", client_address.ip(), client_address.port());
 
-
                 let mut list_guard = list_tx_clients_clone.lock().unwrap();
-                // Controlla se il messaggio è "START"
+                // If the message is "START" and the client is not in the list of clients, add the client to the list and start a thread to send the data to the client
                 if message.trim() == "START"{
                     if !list_guard.contains_key(&target_address.clone()){
 
@@ -152,13 +158,14 @@ impl StreamingServer {
                         let (tx, rx) = channel::<Vec<u8>>();
 
                         list_guard.insert(target_address.clone(), Client{ tx, });
+
+                        // Send an ACK to the client
                         listener_socket.send_to(b"OK", &target_address).unwrap();
                         
-                        println!("Client connesso: {}", target_address);
-                        //Spawna un thread per inviare i dati al client
+                        // Start a thread to send the data to the client
                         thread::spawn(move || {
                             loop {
-                                // Ricevi i dati dal canale e inviali; quando il client viene rimosso dalla lista, il tx viene droppato e il thread termina
+                                // When the client is closed, drop the client from the list of clients
                                 match rx.recv(){
                                     Ok(data) => {send_socket.send_to(&data, &target_address).unwrap();},
                                     Err(e) => {
@@ -169,45 +176,51 @@ impl StreamingServer {
                             }
                         });
                     }else{
+                        // Send an ACK to the client if the client is already in the list of clients
                         listener_socket.send_to(b"OK", &target_address).unwrap();
                     }
                 }
+                // If the message is "STOP" and the client is in the list of clients remove the client from the list of clients
                 if message.trim().starts_with("STOP"){
                     let message = message.split("\n").collect::<Vec<&str>>();
                     let ip = message[1];
                     list_guard.remove(ip);
+                    // Send an ACK to the client
                     listener_socket.send_to(b"OK", &client_address).unwrap();
                 }
                 drop(list_guard);
             }
-            println!("Listener terminato.");
-            cvar.notify_all(); // Notifica che il listener è terminato
+            // Notify all the threads that the listener thread is terminated
+            cvar.notify_all(); 
         });
 
         self.threads.push(h);
 
+        // Start a thread to send the screen casting data to the clients
         let list_tx_clients_clone2 = Arc::clone(&self.list_clients);
         let h = thread::spawn(move || {
             let (lock, cvar) = &*control_clone;
 
             loop {
+                // Check the condition variable to stop the thread
                 if *lock.lock().unwrap() {
-                    println!("Terminazione del sender thread.");
                     break;
                 }
 
                 let n = reader.read(&mut buffer).unwrap();
+                // If the data is empty, break the loop
                 if n == 0 {
                     break;
                 }
                 let clients = list_tx_clients_clone2.lock().unwrap();
+                // Send the data to all the clients
                 for client in clients.values() {
                     client.tx.send(buffer[..n].to_vec()).unwrap();
                 }
             }
 
-            println!("Sender thread terminato.");
-            cvar.notify_all(); // Notifica che il sender è terminato
+            // Notify all the threads that the sender thread is terminated
+            cvar.notify_all(); 
         });
 
         self.threads.push(h);
@@ -216,10 +229,12 @@ impl StreamingServer {
 
     }
 
+    // Stop the screen casting process. Notify all the connected clients and terminate the threads.
     pub fn stop (&mut self) {
         if let Some(ref process) = self.handle {
             let mut guard = process.lock().unwrap();
 
+            // Send "q" to the stdin of the FFmpeg process to stop the process
             if let Some(mut stdin) = (*guard).take_stdin() {
                 writeln!(stdin, "q").unwrap();
             }
@@ -227,19 +242,17 @@ impl StreamingServer {
             guard.wait().expect("Failed to stop FFmpeg process");
 
             {
+                // Set the condition variable to true to stop the threads
                 let (lock, cvar) = &*self.control;
                 let mut terminate = lock.lock().unwrap();
                 *terminate = true;
-                cvar.notify_all(); // Notifica tutti i thread
+                cvar.notify_all();
             }
 
+            // Wait for the threads to terminate
             for h in self.threads.drain(..) {
                 h.join().unwrap();
             }
-
-            println!("Screen casting fermato!");
-        } else {
-            println!("No casting in progress to stop.");
         }
     }
 }
