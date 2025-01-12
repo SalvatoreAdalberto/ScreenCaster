@@ -1,5 +1,5 @@
 # ScreenCaster
-
+### by Salvatore Adalberto Esposito s304800 and Marco Del Core s322783
 # Compilation and Execution of the Application
 
 To compile the project, execute the respective script based on your operating system:
