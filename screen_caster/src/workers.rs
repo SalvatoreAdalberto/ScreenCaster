@@ -129,7 +129,7 @@ impl FrameAggregator{
                     drop(sending_turn_guard);
                     self.cv.notify_all();
                 }
-                Err(e) => {
+                Err(_) => {
                     drop(internal_rx_image);
                     self.terminate_sender.send(true).unwrap();
                     while let Ok(_) = self.terminate_sender.send(true){

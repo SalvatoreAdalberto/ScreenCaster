@@ -1,5 +1,3 @@
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-
 use ffmpeg_sidecar::{command::FfmpegCommand, event::FfmpegEvent, event::OutputVideoFrame};
 
 use std::net::UdpSocket;
@@ -12,7 +10,6 @@ use crossbeam_channel::{bounded, Sender as CrossbeamSender, Receiver as Crossbea
 
 use std::process::ChildStdin;
 use std::io::{ Write, BufWriter};
-use std::io::ErrorKind;
 use std::path::PathBuf;
 use chrono::Local;
 use std::time::{Instant, Duration};
@@ -22,7 +19,6 @@ use crate::gif_widget::{GifPlayer, GifPlayerMessage};
 use iced::{ Subscription, time as iced_time, Element, Length};
 use iced::widget::{Button, image::Handle, image::Image, Text};
 
-const LOADING_IMG: &str = "—Pngtree—blue circular progress bar page_6476398.png";
 const BUFFER_SIZE: usize = 1024;
 
 /// This module manages the streaming client. It is responsible for managing the connection with the server, receiving the video stream and displaying it.
@@ -74,15 +70,14 @@ impl StreamingClient {
         let ip_address: String;
         match local_ip() {
             Ok(ip) => ip_address = ip.to_string(),
-            Err(e)=> {
-                println!("Impossibile ottenere l'indirizzo IP. Errore: {}", e);
+            Err(_)=> {
                 panic!()
             },
         };
 
         //Define socket
         let socket = Arc::new(UdpSocket::bind(format!("{ip_address}:3040")).expect("Failed to bind socket"));  // Il client bind sulla porta 8080
-        let current_frame = Handle::from_path(LOADING_IMG);
+        let current_frame = Handle::from_memory([0 as u8; 1]);
         let (tx_connection_status, rx_connection_status) = bounded(1);
 
        
@@ -135,7 +130,6 @@ impl StreamingClient {
                     break;
                 }
                 if start.elapsed() > Duration::from_secs(5) {
-                    eprintln!("Connection timeout");
                     tx_sc.send(VideoPlayerMessage::NoConnection).unwrap();
                     break;
                 }
@@ -197,16 +191,13 @@ impl StreamingClient {
                 match socket_clone.recv(&mut buffer) {
                     Ok(number_of_bytes) => {
                         let data = &buffer[..number_of_bytes];
-                        if let Err(err) = tx_playback.send(data.to_vec()) {
-                            eprintln!("Failed to send data to playback: {}", err);
+                        if let Err(_) = tx_playback.send(data.to_vec()) {
                             break;
                         }
                         let is_recording_guard = is_recording1.lock().unwrap();
                         if *is_recording_guard {
                             drop(is_recording_guard);
-                            if let Err(err) = tx_record.send(data.to_vec()) {
-                                eprintln!("Failed to send data to record: {}", err);
-                            }
+                            let _  = tx_record.send(data.to_vec());
                         }else{
                             drop(is_recording_guard);
                         }
@@ -218,7 +209,6 @@ impl StreamingClient {
                     }
                 }
             }
-            println!("Ending thread-socketManager-1");
         });
         // PLAYBACK
         thread::spawn(move || {
@@ -271,8 +261,6 @@ impl StreamingClient {
 
                     }
                     Err(_) => {
-                        //eprintln!("Failed to receive data playback: {}", err);
-
                         break;
                     }
                 }
@@ -293,11 +281,9 @@ impl StreamingClient {
                 let message = format!("STOP\n{}:3040", self.own_ip);
                 socket.set_read_timeout(Some(Duration::from_secs_f32(0.2))).expect("Failed to set read timeout");
                 let start = Instant::now();
-                println!("Asking to stop connection");
 
                 loop{
                     if start.elapsed() > Duration::from_secs(1) {
-                        eprintln!("Connection timeout");
                         break;
                     }
                     let _ = socket.send_to(&message.as_bytes(), &address);
@@ -308,15 +294,12 @@ impl StreamingClient {
                                 break;
                             }
                         }
-                        Err(err) => {
-                            eprintln!("Failed to receive data: {}", err);
-                        }
+                        Err(_) => {}
                     }
                 }
                 drop(socket);
             },
             Err(_) => {
-                eprintln!("Failed to bind socket");
             }
         }
     }
@@ -364,18 +347,12 @@ impl StreamingClient {
                     match writer.write_all(&data){
                         Ok(_) => {
                         },
-                        Err(e) if e.kind() == ErrorKind::BrokenPipe => {
-                            eprintln!("Closed record process: {}", e);
-                            break;
-                        },
-                        Err(e) => {
-                            eprintln!("Failed to write data to record: {}", e);
+                        Err(_) => {
                             break;
                         }
                     }
                 }
-                Err(err) => {
-                    eprintln!("Failed to receive data record: {}", err);
+                Err(_) => {
                     break;
                 }
             }
@@ -390,14 +367,12 @@ impl StreamingClient {
             stdin_record.flush().unwrap();
             match stdin_record.write_all(b""){
                 Ok(_) => {
-                    println!("Record process killed");
                     drop(stdin_record);
                     self.pid_record = None;
                     self.stdin_record = None;
                     *recording_guard = false;
                 },
-                Err(e) => {
-                    eprintln!("Failed to kill record process: {}", e);
+                Err(_) => {
                 }
             }
         }
@@ -422,7 +397,6 @@ impl StreamingClient {
             }
             VideoPlayerMessage::NoConnection => {
                 self.state = StreamingClientStateEnum::Retry;
-                println!("HERE");
                 None
             }
             VideoPlayerMessage::NoStreamAvailable =>{
@@ -530,7 +504,6 @@ impl StreamingClient {
 }
 impl Drop for StreamingClient {
     fn drop(&mut self) {
-        println!("Dropping Streaming Client");
         let _ = self.tx_connection_status.try_send(VideoPlayerMessage::Exit);
         if let Some(_) = self.pid_record {
             self.stop_record();

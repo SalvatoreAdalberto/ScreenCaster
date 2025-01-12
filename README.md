@@ -1,4 +1,31 @@
 # ScreenCaster
+
+# Compilation and Execution of the Application
+
+To compile the project, execute the respective script based on your operating system:
+
+- On **Linux/MacOS**, run the `launcher.sh` script.
+- On **Windows**, execute the `launcher.bat` script.
+  
+Both accept as parameter a boolean: set `true` if you want to cargo clean your project before compiling, or set `false`if you want to stay with a previously compiled version (in any case `screen_caster`will be compiled, as any missing module).
+
+These scripts perform the following operations:
+
+1. **Compilation of All Modules**:
+   - The scripts ensure that each of the required modules is compiled, including:
+     - **screen_caster**
+     - **annotation_tool**
+     - **overlay_crop**
+     - **setup**
+
+2. **Application Launch**:
+   - Upon successful compilation of all modules, `setup` module is run to check if `ffmpeg` is alrready present on your device, otherwise a proper version is downloaded and intalled. Then
+  the application is initialized by launching the `screen_caster` module as the main application.
+
+**Important**: The main application (`screen_caster`) cannot be executed unless all other dependent modules are correctly configured and compiled. These scripts ensure the proper configuration and compilation of each module before the application is launched, thereby preventing any runtime errors due to missing or misconfigured components.
+
+---
+
 # Creating a Screencasting Application in Rust
 
 Create a screencasting application using Rust that continuously captures screen content (or a portion thereof) and streams it to peers. The application should meet the following requirements:
@@ -16,15 +43,3 @@ Create a screencasting application using Rust that continuously captures screen 
 * **Annotation Tools**: Offer tools for overlaying annotations on captured content in casting mode.
 * **Save Options**: Allow receivers to record received content to video files.
 * **Multi-monitor Support**: Recognize and handle multiple monitors independently for content casting.
-
-## Useful Resources
-
-* [WebRTC crate](https://github.com/webrtc-rs/webrtc)
-* [Ngrok crate](https://ngrok.com/docs/using-ngrok-with/rust/)
-* [Druid crate documentation](https://docs.rs/druid/latest/druid/)
-* [Tiny Intro to Async/Await Tokio crate for server](https://www.youtube.com/watch?v=T2mWg91sx-o&ab_channel=ManningPublications)
-* [Cargo Workspaces](https://doc.rust-lang.org/book/ch14-03-cargo-workspaces.html)
-* [ScreenCasting app in Java](https://github.com/pcyfox/ScreenCasting/tree/master)
-* [ScreenGrabber app in Rust](https://github.com/Ieptor/ScreenGrabber)
-* [MiraShare app](https://github.com/mira-screen-share/sharer)
-* [coTURN Server](https://github.com/coturn/coturn)

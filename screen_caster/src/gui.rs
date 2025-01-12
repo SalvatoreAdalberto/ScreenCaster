@@ -19,7 +19,7 @@ impl <'a>Banner<'a> for ConnectInputErrorBanner{
 }
 
 
-// Definiamo i messaggi dell'applicazione
+/// Message enum used to update the application
 #[derive(Debug, Clone)]
 pub enum Message {
     GoToShareScreen,
@@ -28,9 +28,9 @@ pub enum Message {
     StopCasting,
     GoBackHome,
     SuggestionClicked((String, String)),
-    InputChanged(String),
-    StartRecordHotkeyChanged(String),
-    StopRecordHotkeyChanged(String),
+    ConnectInputChanged(String),
+    StartCastingHotkeyChanged(String),
+    StopCastingHotkeyChanged(String),
     ClearHotkeyChanged(String),
     CloseHotkeyChanged(String),
     GoToChangeHotKeys,
@@ -38,24 +38,23 @@ pub enum Message {
     GoToChangeDirectory,
     SaveHotKeys,
     ToggleAnnotationTool,
-    SelectCropArea,
     TryConnect,
     Connecting,
     VideoPlayerMessage(VideoPlayerMessage),
     StopConnection,
-    PickList(usize),
-    ScreenSelected,
-    ModeSelected(ShareMode),
+    SelectScreen(usize),
+    ConfirmCastingSettings,
+    SelectMode(ShareMode),
     HotkeyMessage(HotkeyMessage),
     BrowseDirectory,
     DirectorySelected(Option<String>),
     SaveDirectory,
-    GoToListStreamers,
+    GoToStreamersTable,
     StreamersTableMessage(StreamersTableMessage),
     CloseBanner
 }
 
-// Stati possibili dell'applicazione
+/// AppStateEnum enum used to manage the application state
 #[derive(Debug, Clone, Copy)]
 pub enum AppStateEnum {
     Home,
@@ -71,12 +70,12 @@ pub enum AppStateEnum {
     ConnectInputError(InputError),
 }
 
-// Struttura dell'applicazione
+/// ScreenCaster struct
 pub struct ScreenCaster {
     state: AppStateEnum,
     ip_address: String,
     input_state: String,
-    app_state: Arc<Mutex<AppState>>, // Stato condiviso dell'applicazione
+    app_state: Arc<Mutex<AppState>>,
     manager: Arc<Mutex<GlobalHotKeyManager>>,
     start_hotkey: HotKey,
     stop_hotkey: HotKey,
@@ -86,8 +85,8 @@ pub struct ScreenCaster {
     stop_id: Arc<Mutex<u32>>,
     clear_id: Arc<Mutex<u32>>,
     close_id: Arc<Mutex<u32>>,
-    start_shortcut: String,        // Shortcut per avviare la registrazione
-    stop_shortcut: String,         // Shortcut per fermare la registrazione
+    start_shortcut: String,        
+    stop_shortcut: String,         
     clear_shortcut: String,
     close_shortcut: String,
     streamers_table: StreamersTable,
@@ -99,6 +98,7 @@ pub struct ScreenCaster {
     selected_directory: String,
 }
 
+/// ShareMode enum used to manage the share mode
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ShareMode {
     Fullscreen,
@@ -155,12 +155,20 @@ impl Application for ScreenCaster {
     }
 
     fn title(&self) -> String {
-        String::from("Screen Casting App")
+        String::from("Screen Caster App")
     }
 
+    /// Update method called in the application loop in order to manage incoming messages
     fn update(&mut self, message: Message) -> Command<Message> {
         let mut app_state = self.app_state.lock().unwrap();
         match message {
+            Message::GoBackHome => {
+                self.state = AppStateEnum::Home;
+                app_state.is_sharing = false; 
+            }
+            Message::GoToChangeHotKeys => {
+                self.state = AppStateEnum::ChangeHotKeys
+            }
             Message::GoToShareScreen => {
                 self.state = AppStateEnum::SelectScreen;
             }
@@ -170,33 +178,16 @@ impl Application for ScreenCaster {
                 self.streamers_table.get_users().into_iter().for_each(|(_, (name, ip))|{
                     self.streamers_map.insert(name, ip);
                 });
-                app_state.is_sharing = false; // Non siamo in condivisione
+                app_state.is_sharing = false; 
             }
-            Message::ScreenSelected => {
-                if app_state.share_mode == ShareMode::CropArea {
-                    let exe_path = utils::get_project_src_path();
-                    let real_path ;
-                    real_path = exe_path.display().to_string() + r"/overlay_crop/target/release/overlay_crop";
-                    Command2::new(real_path)
-                        .arg(app_state.screen_index.to_string())
-                        .output()
-                        .expect("Non è stato possibile avviare l'overlay crop");
-                }
-                app_state.is_sharing = true; // Imposta lo stato di condivisione
-                self.state = AppStateEnum::StartSharing;
+            Message::GoToSettings => {
+                self.state = AppStateEnum::Settings;
             }
-            Message::StartCasting => {
-                app_state.start(); // Avvia la registrazione
-                self.state = AppStateEnum::IsSharing;
-                
+            Message::GoToChangeDirectory => {
+                self.state = AppStateEnum::ChangeDirectory;
             }
-            Message::StopCasting => {
-                app_state.stop(); // Ferma la registrazione
-                self.state = AppStateEnum::StartSharing;
-            }
-            Message::GoBackHome => {
-                self.state = AppStateEnum::Home;
-                app_state.is_sharing = false; // Uscita dalla condivisione
+            Message::GoToStreamersTable => {
+                self.state = AppStateEnum::ChangeListStreamers;
             }
             Message::SuggestionClicked((suggestion, ip)) => {
                 self.ip_address = ip;
@@ -204,7 +195,7 @@ impl Application for ScreenCaster {
                 self.streamers_suggestions.clear();
 
             }
-            Message::InputChanged(value) => {
+            Message::ConnectInputChanged(value) => {
                 self.input_state = (&value).to_string();
                 if self.input_state.is_empty() {
                     self.streamers_suggestions.clear();
@@ -219,6 +210,7 @@ impl Application for ScreenCaster {
                 self.ip_address.clear();
 
             }
+            // Test the ip input and if valid try to connect
             Message::TryConnect => {
                     if !self.input_state.is_empty() {
                         let matching = self.streamers_map.iter()
@@ -251,14 +243,13 @@ impl Application for ScreenCaster {
                         self.state = AppStateEnum::ConnectInputError(InputError::NoValue);
                     }
             }
-            Message::CloseBanner => {
-                self.state = AppStateEnum::Connect;
-            }
+            // Update the video player: used to communicate with streaming_client
             Message::VideoPlayerMessage(message) => {
                 if let Some(sc) = &mut self.streaming_client {
                     sc.update(message);
                 }
             }
+            // Stop incoming streaming
             Message::StopConnection => {
                 if let Some(sc) = &mut self.streaming_client {
                     sc.update(VideoPlayerMessage::Exit);
@@ -267,15 +258,74 @@ impl Application for ScreenCaster {
                 self.state = AppStateEnum::Connect;
 
             }
+            // Make streaming client init the connection with server
             Message::Connecting => {
                 if let Some(sc) = &mut self.streaming_client {
                     sc.update(VideoPlayerMessage::Connect);
                 }
+            }          
+            Message::ConfirmCastingSettings => {
+                if app_state.share_mode == ShareMode::CropArea {
+                    let exe_path = utils::get_project_src_path();
+                    let real_path ;
+                    real_path = exe_path.display().to_string() + r"/overlay_crop/target/release/overlay_crop";
+                    Command2::new(real_path)
+                        .arg(app_state.screen_index.to_string())
+                        .output()
+                        .expect("Non è stato possibile avviare l'overlay crop");
+                }
+                app_state.is_sharing = true;
+                app_state.session_closed = false;
+                self.state = AppStateEnum::StartSharing;
             }
-            Message::GoToChangeHotKeys => {
-                self.state = AppStateEnum::ChangeHotKeys
+            Message::StartCasting => {
+                app_state.start(); 
+                self.state = AppStateEnum::IsSharing;
+                
+            }
+            Message::StopCasting => {
+                app_state.stop(); 
+                self.state = AppStateEnum::StartSharing;
+            }                
+            Message::SelectScreen(n) => {
+                app_state.screen_index = n;
+                self.screen_index = n;
+            }
+            Message::SelectMode(mode) => {
+                app_state.share_mode = mode;
+                self.share_mode = mode;
+            }
+            Message::BrowseDirectory => {
+                let selected_directory = FileDialog::new()
+                    .show_open_single_dir()
+                    .ok()
+                    .flatten();
+                return Command::perform(async {}, |_| Message::DirectorySelected(selected_directory.map(|d| d.display().to_string())));
+            }
+            Message::DirectorySelected(directory) => {
+                if let Some(directory) = directory {
+                    self.selected_directory = directory;
+                }
+            }
+            Message::SaveDirectory => {
+                let dir = self.selected_directory.clone();
+                utils::save_directory(&dir).unwrap();
+                
+                self.state = AppStateEnum::Settings;
+            }
+            Message::StreamersTableMessage(message) => {
+                if let StreamersTableMessage::Exit = message {
+                    self.streamers_table.update(message);
+                    return Command::perform(async {}, |_| Message::GoToViewScreen);
+                } else {
+                    self.streamers_table.update(message); 
+                }
             }
             Message::SaveHotKeys => {
+                if self.start_shortcut.as_str().len() == 0 || self.stop_shortcut.as_str().len() == 0 || self.clear_shortcut.as_str().len() == 0 || self.close_shortcut.as_str().len() == 0 {
+                    self.state = AppStateEnum::ChangeHotKeys;
+                    return Command::none();
+                }
                 let manager = self.manager.lock().unwrap();
 
                 manager.unregister_all(&[self.start_hotkey, self.stop_hotkey, self.clear_hotkey, self.close_hotkey]).unwrap();
@@ -325,21 +375,14 @@ impl Application for ScreenCaster {
                 *id4 = hotkey_close.id();
 
                 utils::save_hotkeys(&self.start_shortcut, &self.stop_shortcut, &self.clear_shortcut, &self.close_shortcut).unwrap();
-
-                
-                
-                
-                
-                
-
                 self.state = AppStateEnum::Settings;
             }
-            Message::StartRecordHotkeyChanged(key) => {
+            Message::StartCastingHotkeyChanged(key) => {
                 if key.as_str().len() <= 1 {
                     self.start_shortcut = key.to_uppercase()
                 }
             }
-            Message::StopRecordHotkeyChanged(key) => {
+            Message::StopCastingHotkeyChanged(key) => {
                 if key.as_str().len() <= 1 {
                     self.stop_shortcut = key.to_uppercase()
                 }
@@ -353,39 +396,6 @@ impl Application for ScreenCaster {
                 if key.as_str().len() <= 1 {
                     self.close_shortcut = key.to_uppercase();
                 }
-            }
-            Message::ToggleAnnotationTool => {
-                 if !app_state.check_annotation_open() {
-
-                    let exe_path = utils::get_project_src_path();
-                    let real_path ;
-                    real_path = exe_path.display().to_string() + r"/annotation_tool/target/release/annotation_tool";
-                    let child = Some(Command2::new(real_path)
-                        .arg(app_state.screen_index.to_string())
-                        .stdin(Stdio::piped())
-                        .spawn()
-                        .expect("Non è stato possibile avviare l'annotation tool"));
-                    app_state.update_stdin(child.unwrap().stdin.unwrap());
-                } else {
-                    
-                }
-            }
-            Message::SelectCropArea => {
-                let exe_path = utils::get_project_src_path();
-                let real_path ;
-                real_path = exe_path.display().to_string() + r"/overlay_crop/target/release/overlay_crop";
-                Command2::new(real_path)
-                    .arg(app_state.screen_index.to_string())
-                    .output()
-                    .expect("Non è stato possibile avviare l'overlay crop");
-            }
-            Message::PickList(n) => {
-                app_state.screen_index = n;
-                self.screen_index = n;
-            }
-            Message::ModeSelected(mode) => {
-                app_state.share_mode = mode;
-                self.share_mode = mode;
             }
             Message::HotkeyMessage(message) => {
                 match message {
@@ -410,66 +420,53 @@ impl Application for ScreenCaster {
                     }
                 }
             }
-            Message::BrowseDirectory => {
-                // Apri il file dialog per selezionare una directory
-                let selected_directory = FileDialog::new()
-                    .show_open_single_dir()
-                    .ok()
-                    .flatten();
-                return Command::perform(async {}, |_| Message::DirectorySelected(selected_directory.map(|d| d.display().to_string())));
-            }
-            Message::DirectorySelected(directory) => {
-                if let Some(directory) = directory {
-                    self.selected_directory = directory;
-                }
-            }
-            Message::GoToSettings => {
-                self.state = AppStateEnum::Settings;
-            }
-            Message::GoToChangeDirectory => {
-                self.state = AppStateEnum::ChangeDirectory;
-            }
-            Message::SaveDirectory => {
-                let dir = self.selected_directory.clone();
-                utils::save_directory(&dir).unwrap();
-                
-                self.state = AppStateEnum::Settings;
-            }
-            Message::GoToListStreamers => {
-                self.state = AppStateEnum::ChangeListStreamers;
-            }
-            Message::StreamersTableMessage(message) => {
-                if let StreamersTableMessage::Exit = message {
-                    self.streamers_table.update(message);
-                    return Command::perform(async {}, |_| Message::GoToViewScreen);
+            Message::ToggleAnnotationTool => {
+                 if !app_state.check_annotation_open() {
+
+                    let exe_path = utils::get_project_src_path();
+                    let real_path ;
+                    real_path = exe_path.display().to_string() + r"/annotation_tool/target/release/annotation_tool";
+                    let child = Some(Command2::new(real_path)
+                        .arg(app_state.screen_index.to_string())
+                        .stdin(Stdio::piped())
+                        .spawn()
+                        .expect("Non è stato possibile avviare l'annotation tool"));
+                    app_state.update_stdin(child.unwrap().stdin.unwrap());
                 } else {
-                    self.streamers_table.update(message); 
+                    
                 }
+            }
+            Message::CloseBanner => {
+                self.state = AppStateEnum::Connect;
             }
         }
 
         Command::none()
     }
 
+    /// View method used to render the application, called after each update call in the application loop
+    /// Render a different view based on the current state
     fn view(&self) -> Element<Message> {
         match self.state {
             AppStateEnum::Home => self.view_home(),
-            AppStateEnum::StartSharing => self.view_start_sharing(),
-            AppStateEnum::IsSharing => self.view_is_sharing(),
+            AppStateEnum::StartSharing => self.view_start_casting(),
+            AppStateEnum::IsSharing => self.view_casting(),
             AppStateEnum::Connect | AppStateEnum::ConnectInputError(_) => self.view_connect(),
-            AppStateEnum::ChangeHotKeys => self.view_change_hotkey(),
-            AppStateEnum::Watching => self.view_watching(),
-            AppStateEnum::SelectScreen => self.view_select_screen(),
+            AppStateEnum::ChangeHotKeys => self.view_modify_hotkeys(),
+            AppStateEnum::Watching => self.view_streaming(),
+            AppStateEnum::SelectScreen => self.view_casting_settings(),
             AppStateEnum::Settings => self.view_settings(),
             AppStateEnum::ChangeDirectory => self.view_save_directory(),
-            AppStateEnum::ChangeListStreamers => self.view_modify_list_streamers(),
+            AppStateEnum::ChangeListStreamers => self.view_streamers_table(),
         }
     }
 
     fn theme(&self) -> Theme {
-        Theme::Dark  // Tema scuro
+        Theme::Dark  
     }
 
+    /// Subscription method used to manage all application subscriptions.
+    /// Used to manage hotkeys and streaming client subscriptions.
     fn subscription(&self) -> Subscription<Message> {
         match self.state {
             AppStateEnum::Watching => {
@@ -492,7 +489,7 @@ impl Application for ScreenCaster {
 
 
 impl ScreenCaster {
-    // Vista della Home Page
+    
     fn view_home(&self) -> Element<Message> {
         let content = Column::new()
             .spacing(20)
@@ -535,7 +532,7 @@ impl ScreenCaster {
             .into()
     }
 
-    fn view_select_screen(&self) -> Element<Message> {
+    fn view_casting_settings(&self) -> Element<Message> {
         let n_screens = utils::count_screens();
         let screens = (1..=n_screens).collect::<Vec<usize>>();
         let modes = vec![ShareMode::Fullscreen, ShareMode::CropArea];
@@ -558,7 +555,7 @@ impl ScreenCaster {
                                 PickList::new(
                                     screens,
                                     Some(self.screen_index),
-                                    Message::PickList,
+                                    Message::SelectScreen,
                                 )
                                     .placeholder("Seleziona uno schermo..."),
                             ),
@@ -572,7 +569,7 @@ impl ScreenCaster {
                                 PickList::new(
                                     modes,
                                     Some(self.share_mode),
-                                    Message::ModeSelected,
+                                    Message::SelectMode,
                                 )
                                     .placeholder("Seleziona una modalità..."),
                             ),
@@ -593,7 +590,7 @@ impl ScreenCaster {
                         Button::new(Text::new("Conferma").horizontal_alignment(Horizontal::Center))
                             .padding(10)
                             .width(Length::Fixed(200.0))
-                            .on_press(Message::ScreenSelected),
+                            .on_press(Message::ConfirmCastingSettings),
                     ),
             );
 
@@ -605,8 +602,7 @@ impl ScreenCaster {
             .into()
     }
 
-    // Vista per la condivisione dello schermo
-    fn view_start_sharing(&self) -> Element<Message> {
+    fn view_start_casting(&self) -> Element<Message> {
         let content = Column::new()
             .spacing(20)
             .align_items(Alignment::Center)
@@ -637,7 +633,7 @@ impl ScreenCaster {
             .into()
     }
 
-    fn view_is_sharing(&self) -> Element<Message> {
+    fn view_casting(&self) -> Element<Message> {
         let content = Column::new()
             .spacing(20)
             .align_items(Alignment::Center)
@@ -668,7 +664,6 @@ impl ScreenCaster {
             .into()
     }
 
-    // Vista per la visualizzazione dello schermo condiviso
     fn view_connect(&self) -> Element<Message> {
         let content = Column::new()
             .spacing(20)
@@ -681,7 +676,7 @@ impl ScreenCaster {
                 )
                     .padding(10)
                     .width(Length::Fixed(500.0))
-                    .on_input(|input| Message::InputChanged(input)),
+                    .on_input(|input| Message::ConnectInputChanged(input)),
             )
             .push(
                 Scrollable::new(
@@ -723,7 +718,7 @@ impl ScreenCaster {
                         Button::new(Text::new("Gestisci lista streamers").horizontal_alignment(Horizontal::Center))
                             .padding(10)
                             .width(Length::Fixed(200.0))
-                            .on_press(Message::GoToListStreamers),
+                            .on_press(Message::GoToStreamersTable),
                     ),
             )
             .push(
@@ -753,7 +748,7 @@ impl ScreenCaster {
         
     }
 
-    fn view_watching(&self) -> Element<Message> {
+    fn view_streaming(&self) -> Element<Message> {
         let content;
         if let Some(sc) = self.streaming_client.as_ref(){
             let mut row = Row::new()
@@ -835,7 +830,7 @@ impl ScreenCaster {
             .into()
     }
 
-    fn view_change_hotkey(&self) -> Element<Message> {
+    fn view_modify_hotkeys(&self) -> Element<Message> {
         let content = Column::new()
             .spacing(20)
             .align_items(Alignment::Center)
@@ -859,7 +854,7 @@ impl ScreenCaster {
                             )
                                 .padding(10)
                                 .width(Length::Fixed(50.0))
-                                .on_input(Message::StartRecordHotkeyChanged),)
+                                .on_input(Message::StartCastingHotkeyChanged),)
                         )
             )
             .push(
@@ -882,7 +877,7 @@ impl ScreenCaster {
                         )
                             .padding(10)
                             .width(Length::Fixed(50.0))
-                            .on_input(Message::StopRecordHotkeyChanged),)
+                            .on_input(Message::StopCastingHotkeyChanged),)
                     )
             )
             .push(
@@ -987,7 +982,7 @@ impl ScreenCaster {
             .into()
     }
 
-    fn view_modify_list_streamers(&self) -> Element<Message> {
+    fn view_streamers_table(&self) -> Element<Message> {
         
         Container::new(self.streamers_table.view_streamers_table().map(Message::StreamersTableMessage))
             .center_x()

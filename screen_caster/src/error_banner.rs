@@ -40,7 +40,7 @@ pub trait Banner<'a> {
         message: InputError,
         content: Column<'a, Self::ExtMessage>,
         close_message: Self::ExtMessage,
-    ) -> Element<'_, Self::ExtMessage> {
+    ) -> Element<'a, Self::ExtMessage> {
         let error_text;
         match message{
             InputError::NameAlreadyPresent => {

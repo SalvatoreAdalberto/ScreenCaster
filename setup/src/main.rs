@@ -30,7 +30,7 @@ pub fn check_ffmpeg() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         let download_url = ffmpeg_download_url_custom()?;
-        let destination = sidecar_dir()?;
+        let destination = ffmpeg_dir()?;
 
         println!("Downloading from: {:?}", download_url);
         let archive_path = download_ffmpeg_package(download_url, &destination)?;
@@ -63,7 +63,7 @@ fn ffmpeg_download_url_custom() -> Result<&'static str, &'static str> {
 }
 
 pub fn ffmpeg_is_installed() -> bool {
-    Command::new(sidecar_path().unwrap_or_default())
+    Command::new(ffmpeg_path().unwrap_or_default())
         .arg("-version")
         .create_no_window()
         .stderr(Stdio::null())
@@ -73,7 +73,7 @@ pub fn ffmpeg_is_installed() -> bool {
         .unwrap_or_else(|_| false)
 }
 
-pub fn ffmpeg_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
+pub fn ffmpeg_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
     let current_exe = env::current_exe().map_err(|err| {
         format!("Failed to get the path of the current executable: {}", err)
     })?;
@@ -87,23 +87,17 @@ pub fn ffmpeg_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
     Ok(temp_path.join("screen_caster/target/release/"))
 }
 
-/// The (expected) path to an FFmpeg binary adjacent to the Rust binary.
-pub fn sidecar_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
-    let mut path = ffmpeg_path()?.join("ffmpeg");
+/// The (expected) path to an FFmpeg binary adjacent to the screen_caster binary.
+pub fn ffmpeg_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
+    let mut path = ffmpeg_dir()?.join("ffmpeg");
     if cfg!(windows) {
         path.set_extension("exe");
     }
     Ok(path)
 }
 
-/// By default, downloads all temporary files to the same directory as the Rust executable.
-pub fn sidecar_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
-    sidecar_path()?.parent().map(|p| p.to_path_buf()).ok_or_else(||
-        "Failed to determine sidecar directory.".into())
-}
-
 pub fn ffmpeg_version() -> anyhow::Result<String> {
-    ffmpeg_version_with_path(sidecar_path().unwrap())
+    ffmpeg_version_with_path(ffmpeg_path().unwrap())
   }
 
 fn main() {

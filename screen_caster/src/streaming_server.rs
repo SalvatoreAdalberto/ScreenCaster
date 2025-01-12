@@ -49,7 +49,7 @@ impl StreamingServer {
         StreamingServer {
             handle: None,
             list_clients: Arc::new(Mutex::new(HashMap::new())),
-            control: Arc::new((Mutex::new(false), Condvar::new())), // Inizializzazione
+            control: Arc::new((Mutex::new(false), Condvar::new())), 
             threads: Vec::new(),
         }
     }
@@ -58,7 +58,7 @@ impl StreamingServer {
     pub fn start(&mut self, screen_index: usize, share_mode: ShareMode) {
 
         {
-            // Reset the control variable
+            // Reset the control variable, made up of a mutex and a condition variable
             let (lock, cvar) = &*self.control;
             let mut terminate = lock.lock().unwrap();
             *terminate = false;
@@ -107,7 +107,7 @@ impl StreamingServer {
         };
 
         // Bind the socket to the local IP address and port 8080 to listen for incoming connections
-        let socket = Arc::new(UdpSocket::bind(format!("{ip_address}:8080")).expect("Failed to bind socket"));  // Il client bind sulla porta 8080
+        let socket = Arc::new(UdpSocket::bind(format!("{ip_address}:8080")).expect("Failed to bind socket"));
         let listener_socket = socket.clone();
 
         let ffmpeg_command = command.split(" ").collect::<Vec<&str>>();
@@ -168,8 +168,7 @@ impl StreamingServer {
                                 // When the client is closed, drop the client from the list of clients
                                 match rx.recv(){
                                     Ok(data) => {send_socket.send_to(&data, &target_address).unwrap();},
-                                    Err(e) => {
-                                        eprintln!("Errore durante la ricezione dei dati: {}", e);
+                                    Err(_) => {
                                         break;
                                     }
                                 }
