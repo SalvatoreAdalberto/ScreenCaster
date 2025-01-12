@@ -1,12 +1,14 @@
 #[cfg(not(target_os = "windows"))]
 use pnet::datalink;
+#[cfg(not(target_os = "windows"))]
+use ipnetwork::IpNetwork;
 #[cfg(target_os = "windows")]
 use ipconfig::{get_adapters, OperStatus};
 #[cfg(target_os = "windows")]
 use if_addrs::{IfAddr, get_if_addrs};
 #[cfg(target_os = "windows")]
 use ipnet::Ipv4Net;
-use ipnetwork::IpNetwork;
+use std::net::Ipv4Addr;
 
 use std::io;
 use std::fs::{File, OpenOptions};
@@ -23,7 +25,7 @@ pub const SAVE_DIRECTORY_CONFIG_PATH : &str = "../config/save_path.txt";
 
 // Check if the IP address is in the same LAN as the local machine
 pub fn is_ip_in_lan(ip_to_check: &str) -> Result<(), InputError> {
-    let target_ip;
+    let target_ip: Ipv4Addr;
     match ip_to_check.parse(){
         Ok(ip) => {
             target_ip = ip;
