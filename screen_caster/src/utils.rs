@@ -10,6 +10,20 @@ use if_addrs::{IfAddr, get_if_addrs};
 use ipnet::Ipv4Net;
 use std::net::Ipv4Addr;
 
+#[cfg(target_os = "windows")]
+use std::ptr::null_mut;
+#[cfg(target_os = "windows")]
+use std::mem::{size_of, MaybeUninit};
+#[cfg(target_os = "windows")]
+use winapi::um::iptypes::{GAA_FLAG_INCLUDE_PREFIX, IP_ADAPTER_ADDRESSES_LH};
+#[cfg(target_os = "windows")]
+use winapi::shared::winerror::ERROR_BUFFER_OVERFLOW;
+#[cfg(target_os = "windows")]
+use winapi::um::iphlpapi::GetAdaptersAddresses;
+#[cfg(target_os = "windows")]
+use winapi::shared::minwindef::ULONG;
+
+
 use std::io;
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
@@ -51,17 +65,78 @@ pub fn is_ip_in_lan(ip_to_check: &str) -> Result<(), InputError> {
         }
     }
 
-    /// On Windows, this function uses a different implementation due to the peculiarities
-    /// in network configurations. Specifically, when connected to mobile hotspots, the
-    /// netmask is often reported as `255.255.255.255`, which typically indicates a point-to-point connection.
-    /// This function accounts for this problem.
+    // On Windows, this function uses a different implementation due to the peculiarities
+    // in network configurations. Specifically, when connected to mobile hotspots, the
+    // netmask is often reported as `255.255.255.255`, which typically indicates a point-to-point connection.
+    // This function accounts for this problem.
     #[cfg(target_os = "windows")]
     {
+        unsafe {
+            let mut buffer_len: ULONG = 0;
+            // Chiamata iniziale per ottenere la dimensione del buffer
+            let ret_code = GetAdaptersAddresses(
+                0,
+                GAA_FLAG_INCLUDE_PREFIX,
+                null_mut(),
+                null_mut(),
+                &mut buffer_len,
+            );
+    
+            if ret_code != ERROR_BUFFER_OVERFLOW {
+                return Err(InputError::NotInSameLan);
+            }
+    
+            // Alloca il buffer necessario
+            let mut buffer: Vec<u8> = vec![0; buffer_len as usize];
+            let adapter_addresses = buffer.as_mut_ptr() as *mut IP_ADAPTER_ADDRESSES_LH;
+    
+            // Chiamata per ottenere le informazioni sugli adattatori
+            let ret_code = GetAdaptersAddresses(
+                0,
+                GAA_FLAG_INCLUDE_PREFIX,
+                null_mut(),
+                adapter_addresses,
+                &mut buffer_len,
+            );
+    
+            if ret_code != 0 {
+                return Err(InputError::NotInSameLan);
+            }
+    
+            // Itera sugli adattatori di rete
+            let mut current_adapter = adapter_addresses;
+            while !current_adapter.is_null() {
+                let adapter = &*current_adapter;
+    
+                // Ottieni la lista degli indirizzi unicast
+                let mut current_address = adapter.FirstUnicastAddress;
+                while !current_address.is_null() {
+                    let address = &*current_address;
+                    let sockaddr = &*address.Address.lpSockaddr;
+                    if sockaddr.sa_family == winapi::shared::ws2def::AF_INET as u16 {
+                        let ip_bytes = (*(&sockaddr.sa_data[2] as *const _ as *const [u8; 4])).clone();
+                        let local_ip = Ipv4Addr::from(ip_bytes);
+                    
+                        let prefix_length = address.OnLinkPrefixLength;
+                        let netmask = prefix_length_to_netmask(prefix_length);
+    
+                        let (network_start, network_end) = calculate_subnet_range(local_ip, netmask);
+                        if network_start <= target_ip && target_ip <= network_end {
+                            return Ok(()); // L'indirizzo appartiene alla stessa subnet
+                        }
+                    }
+                    current_address = address.Next;
+                }
+                    
+                current_adapter = adapter.Next;
+            }
+        }
+        /*
         let interfaces = match get_if_addrs() {
             Ok(ifaces) => {
                 ifaces
             }
-            Err(e) => {
+            Err(_) => {
                 return Err(InputError::NotInSameLan);
             }
         };
@@ -83,14 +158,14 @@ pub fn is_ip_in_lan(ip_to_check: &str) -> Result<(), InputError> {
 
         for adapter in adapters {
             if adapter.oper_status() == OperStatus::IfOperStatusUp {
-                if let Some(ipv4) = adapter.ip_addresses().iter().find_map(|addr| match addr {
+                if let Some(_) = adapter.ip_addresses().iter().find_map(|addr| match addr {
                     std::net::IpAddr::V4(ip) => Some(ip),
                     _ => None,
                 }) {
                     if let Some(gateway) = adapter.gateways().into_iter().next() {
                         if let std::net::IpAddr::V4(gateway_ip) = gateway {
                 
-                            let subnet = Ipv4Net::new(*gateway_ip, 24).expect("Subnet non valida");
+                            let subnet = Ipv4Net::new(*gateway_ip, 16).expect("Subnet non valida");
 
                             if subnet.contains(&target_ip) {
                                 return Ok(());
@@ -100,6 +175,7 @@ pub fn is_ip_in_lan(ip_to_check: &str) -> Result<(), InputError> {
                 }
             }
         }
+        */
     }
     Err(InputError::NotInSameLan)
 }
